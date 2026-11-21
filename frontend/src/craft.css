@@ -1,0 +1,294 @@
+/*
+ * PreciSign craft layer: shared SVG art direction, morphing controls, toasts, command palette,
+ * sheets, previews and state moments. Rules followed (emil-design-eng, animate, choreograph):
+ * transform/opacity (plus clip-path/filter where noted) only, the existing --ease-out token,
+ * transitions for anything triggered quickly, hover gated to fine pointers, reduced motion
+ * keeps fades but drops movement, and nothing animates on keyboard-driven high-frequency UI.
+ */
+@layer components {
+  @media screen {
+    /* ---------- Page heroes (shared PageHeader) ---------- */
+    .page-hero { position: relative; isolation: isolate; padding: 0.25rem 0 0.75rem; }
+    .page-hero-eyebrow { color: var(--color-workspace-teal); font-size: 0.6875rem; letter-spacing: 0.08em; font-weight: 600; text-transform: uppercase; }
+    .page-hero-motif {
+      inset: 0 0 0 auto; width: min(40%, 24rem); height: 100%;
+      color: var(--color-workspace-teal); opacity: 0.2; --decor-node-fill: #f6f8fa;
+      -webkit-mask-image: linear-gradient(to right, transparent, #000 38%);
+      mask-image: linear-gradient(to right, transparent, #000 38%);
+    }
+    .page-hero[data-motif="archive"] .page-hero-motif { color: var(--color-workspace-steel); }
+    .page-hero[data-motif="people"] .page-hero-motif { color: #3b4f8f; opacity: 0.16; }
+    .page-hero[data-motif="brand"] .page-hero-motif { color: #914300; opacity: 0.14; }
+    .page-hero[data-motif="signature"] .page-hero-motif { color: #0e6f8a; }
+    @media (max-width: 639px) { .page-hero-motif { width: 46%; opacity: 0.13; } }
+
+    /* ---------- Sidebar: the active item is a route node, not a flat bar ---------- */
+    .preci-rail nav a { position: relative; }
+    .preci-rail nav a[aria-current="page"]::before,
+    .preci-rail nav a:not([aria-current="page"])::before {
+      content: ""; position: absolute; left: -0.62rem; top: 50%; bottom: auto;
+      width: 7px; height: 7px; border-radius: 999px; background: #5eead4;
+      box-shadow: 0 0 0 3px rgb(94 234 212 / 18%);
+      transform: translateY(-50%) scale(1);
+      transition: opacity 160ms ease, transform 160ms var(--ease-out);
+    }
+    .preci-rail nav a:not([aria-current="page"])::before { opacity: 0; transform: translateY(-50%) scale(0.6); }
+    .preci-rail nav a svg:first-child { transition: transform 160ms var(--ease-out); }
+    @media (hover: hover) and (pointer: fine) {
+      .preci-rail nav a:not([aria-current="page"]):hover::before { opacity: 0.4; transform: translateY(-50%) scale(0.85); }
+      .preci-rail nav a:hover svg:first-child { transform: translateX(1px); }
+    }
+
+    /* ---------- Form glyphs: the accent stroke draws in on hover ---------- */
+    .form-glyph .glyph-accent { stroke-dasharray: 1; stroke-dashoffset: 0; }
+    .form-glyph { transition: transform 200ms var(--ease-out); }
+    @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+      :is(.forms-card, .dash-form-card):hover .form-glyph { transform: translateY(-2px); }
+      :is(.forms-card, .dash-form-card):hover .form-glyph .glyph-accent { animation: glyph-draw 220ms var(--ease-out) both; }
+    }
+
+    /* Forms Library card: one recipe (hairline, layered elevation), the button nudges its arrow. */
+    .forms-card {
+      position: relative; overflow: hidden; isolation: isolate;
+      box-shadow: 0 1px 2px rgb(16 32 48 / 5%), 0 4px 14px -6px rgb(16 32 48 / 10%);
+      transition: border-color 160ms ease, box-shadow 200ms ease, transform 200ms var(--ease-out);
+    }
+    .forms-card-motif { right: 0; bottom: 0; width: 55%; height: 30%; color: var(--color-workspace-teal); opacity: 1; }
+    .forms-card .forms-card-arrow { transition: transform 160ms var(--ease-out); }
+    @media (hover: hover) and (pointer: fine) {
+      .forms-card:hover { border-color: #b9cbd8; box-shadow: 0 1px 2px rgb(16 32 48 / 6%), 0 10px 24px -10px rgb(16 32 48 / 18%); transform: translateY(-1px); }
+      .forms-card:hover .forms-card-arrow { transform: translateX(3px); }
+    }
+    /* First paint only: one entrance for the grid, with importance-ordered, non-uniform delays. */
+    @media (prefers-reduced-motion: no-preference) {
+      .forms-grid > * { animation: craft-rise 320ms var(--ease-out) both; }
+      .forms-grid > :nth-child(2) { animation-delay: 45ms; }
+      .forms-grid > :nth-child(3) { animation-delay: 80ms; }
+      .forms-grid > :nth-child(4) { animation-delay: 105ms; }
+      .forms-grid > :nth-child(n + 5) { animation-delay: 120ms; }
+    }
+
+    /* ---------- Segmented controls: one sliding pill ---------- */
+    .seg-group { position: relative; isolation: isolate; }
+    .seg-pill { position: absolute; top: 0; left: 0; z-index: -1; width: 0; height: 0; border-radius: 0.4375rem; opacity: 0; pointer-events: none;
+      transition: transform 200ms var(--ease-out), width 200ms var(--ease-out), height 200ms var(--ease-out), opacity 120ms ease; }
+    .seg-pill-steel { background: #365c78; box-shadow: 0 1px 2px rgb(9 24 42 / 20%); }
+    .seg-pill-navy { background: linear-gradient(180deg, #17435c, #12374d); box-shadow: 0 1px 2px rgb(9 24 42 / 22%); }
+    .seg-pill-white { background: #fff; box-shadow: 0 1px 2px rgb(16 32 48 / 12%); }
+    .seg-group > button { position: relative; background: transparent; }
+    .editor-view-toggle.seg-group button[aria-pressed="true"] { background: transparent; }
+
+    /* ---------- Morph button ---------- */
+    .morph-stack { display: inline-grid; place-items: center; }
+    .morph-face {
+      grid-area: 1 / 1; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; white-space: nowrap;
+      transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out), filter 200ms var(--ease-out);
+    }
+    .morph-face[data-active="false"] { opacity: 0; transform: scale(0.97); filter: blur(2px); pointer-events: none; }
+    .morph-button[data-morph="done"] { --morph-glow: rgb(20 184 166 / 22%); box-shadow: 0 0 0 4px var(--morph-glow); transition: box-shadow 200ms ease; }
+    .morph-button[data-morph="done"] .morph-face[data-active="true"] svg { animation: craft-pop 260ms var(--ease-out) both; }
+
+    /* Icon morph: copy → check, refresh → check. */
+    .icon-morph { display: inline-grid; place-items: center; }
+    .icon-morph > * { grid-area: 1 / 1; transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out), filter 180ms var(--ease-out); }
+    .icon-morph > [data-active="false"] { opacity: 0; transform: scale(0.6) rotate(-30deg); filter: blur(2px); }
+
+    /* Expanding panels: the container grows (grid-rows trick, the accordion exception), content fades. */
+    .reveal { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 220ms var(--ease-out); }
+    .reveal[data-open="true"] { grid-template-rows: 1fr; }
+    .reveal > * { min-height: 0; overflow: hidden; opacity: 0; transition: opacity 180ms ease; }
+    .reveal[data-open="true"] > * { opacity: 1; }
+
+    /* Status chip cross-morph when a request updates live. */
+    .status-morph { animation: craft-chip 260ms var(--ease-out) both; }
+
+    /* ---------- Toasts (Sonner principles) ---------- */
+    .preci-toaster { position: fixed; z-index: 60; inset-inline-end: 1rem; bottom: 1rem; width: min(22rem, calc(100vw - 2rem)); pointer-events: none; }
+    .preci-toast-list { display: grid; gap: 0.5rem; }
+    .preci-toast {
+      pointer-events: auto; touch-action: pan-x; display: flex; align-items: flex-start; gap: 0.625rem;
+      padding: 0.75rem 0.75rem 0.75rem 0.875rem; border: 1px solid #dbe4ea; border-radius: 0.75rem; background: #fff;
+      color: var(--color-workspace-ink); font-size: 0.8125rem; line-height: 1.35;
+      box-shadow: 0 1px 2px rgb(16 32 48 / 6%), 0 12px 28px -12px rgb(16 32 48 / 28%);
+      opacity: 0; transform: translateY(100%);
+      transition: transform 400ms ease, opacity 400ms ease;
+    }
+    .preci-toast[data-mounted="true"] { opacity: 1; transform: translateY(0); }
+    .preci-toast-icon { margin-top: 0.0625rem; color: var(--color-workspace-teal); }
+    .preci-toast[data-tone="error"] .preci-toast-icon { color: #be123c; }
+    .preci-toast[data-tone="info"] .preci-toast-icon { color: var(--color-workspace-steel); }
+    .preci-toast-close { display: grid; place-items: center; width: 1.5rem; height: 1.5rem; margin: -0.125rem -0.125rem 0 0; border-radius: 0.375rem; color: var(--color-workspace-muted); }
+    .preci-toast-close:hover { background: #f1f5f8; color: var(--color-workspace-ink); }
+    .preci-toast-close:focus-visible { outline: 2px solid var(--color-workspace-teal); outline-offset: 1px; }
+    @media (max-width: 639px) { .preci-toaster { inset-inline: 1rem; bottom: 5.5rem; width: auto; } }
+
+    /* ---------- Command palette: appears instantly ---------- */
+    .command-palette { width: min(36rem, calc(100vw - 2rem)); max-height: min(70vh, 32rem); margin: 12vh auto auto; padding: 0; border: 1px solid #d9e2e9; border-radius: 0.875rem; background: #fff; box-shadow: 0 24px 60px -20px rgb(9 24 42 / 45%); overflow: hidden; }
+    .command-palette[open] { display: flex; flex-direction: column; }
+    .command-palette::backdrop { background: rgb(9 24 42 / 38%); }
+    .command-palette-search { display: flex; align-items: center; gap: 0.625rem; padding: 0.875rem 1rem; border-bottom: 1px solid #e6ebf0; }
+    .command-kbd { padding: 0.125rem 0.375rem; border: 1px solid #dde3e9; border-radius: 0.3125rem; background: #f6f8fa; color: var(--color-workspace-muted); font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 0.625rem; }
+    .command-palette-list { overflow-y: auto; padding: 0.375rem; }
+    .command-group { padding: 0.5rem 0.625rem 0.25rem; color: #6b7c8c; font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+    .command-item { display: flex; align-items: center; gap: 0.625rem; min-height: 2.75rem; padding: 0.375rem 0.625rem; border-radius: 0.5rem; cursor: pointer; font-size: 0.8125rem; }
+    .command-item[aria-selected="true"] { background: #eef4f7; }
+    .command-item-icon { display: grid; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: 0.4375rem; background: var(--color-workspace-tint); color: var(--color-workspace-teal); }
+    .header-kbd { margin-inline-start: auto; }
+
+    /* ---------- Hover preview popover (desktop) ---------- */
+    .hover-preview {
+      position: absolute; z-index: 40; inset-inline-start: 0; top: calc(100% + 0.375rem); width: 18rem;
+      padding: 0.75rem; border: 1px solid #dbe4ea; border-radius: 0.625rem; background: #fff;
+      box-shadow: 0 16px 36px -16px rgb(9 24 42 / 35%);
+      transform-origin: top left; opacity: 0; transform: scale(0.97) translateY(-2px); pointer-events: none;
+      transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out);
+    }
+    .hover-preview[data-open="true"] { opacity: 1; transform: none; }
+
+    /* ---------- Bottom sheet (mobile) ---------- */
+    .sheet { position: fixed; inset: auto 0 0 0; z-index: 55; max-height: 85dvh; display: flex; flex-direction: column; border-radius: 1rem 1rem 0 0; background: #fff; box-shadow: 0 -16px 40px -16px rgb(9 24 42 / 35%); transform: translateY(100%); transition: transform 360ms var(--ease-drawer, cubic-bezier(0.32, 0.72, 0, 1)); }
+    .sheet-drag { touch-action: none; cursor: grab; }
+    .sheet[data-open="true"] { transform: translateY(0); }
+    .sheet-backdrop { position: fixed; inset: 0; z-index: 54; background: rgb(9 24 42 / 40%); opacity: 0; pointer-events: none; transition: opacity 300ms ease; }
+    .sheet-backdrop[data-open="true"] { opacity: 1; pointer-events: auto; }
+    .sheet-handle { width: 2.5rem; height: 0.3125rem; margin: 0.625rem auto 0.25rem; border-radius: 999px; background: #cfd8e0; }
+
+    /* Request page on phones: the actions column becomes a sheet (same DOM, lifted out of flow). */
+    @media (max-width: 1023px) {
+      .review-aside-sheet:is([data-sheet="open"], [data-sheet="closing"]) {
+        position: fixed; inset: auto 0 0 0; z-index: 55; max-height: 85dvh; overflow-y: auto; overscroll-behavior: contain;
+        margin: 0; padding: 0 0.75rem max(1rem, env(safe-area-inset-bottom)); border-radius: 1rem 1rem 0 0; background: #f3f6f9;
+        box-shadow: 0 -16px 40px -16px rgb(9 24 42 / 35%);
+        animation: sheet-in 360ms var(--ease-drawer, cubic-bezier(0.32, 0.72, 0, 1)) both;
+      }
+      .review-aside-sheet[data-sheet="closing"] { animation: sheet-out 240ms var(--ease-out) both; }
+    }
+
+    /* Summary cards: an odd last card fills the row on two-column phones instead of leaving a hole. */
+    @media (min-width: 360px) and (max-width: 1023px) {
+      .inbox-summary > :last-child:nth-child(odd) { grid-column: span 2; }
+    }
+
+    /* ---------- Empty states ---------- */
+    .empty-state-motif { transition: transform 300ms var(--ease-out); }
+    .empty-state[data-variant="locked"] .empty-state-motif { color: #914300; }
+    .empty-state[data-variant="search"] .empty-state-motif { color: var(--color-workspace-steel); }
+    @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+      .empty-state:hover .route-decor-path { animation: route-drift 4s linear infinite; }
+    }
+
+    /* ---------- Not found: the route breaks ---------- */
+    .notfound-motif { width: 11rem; height: auto; color: var(--color-workspace-steel); }
+    .notfound-gap { transform-origin: center; transform-box: fill-box; }
+    @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+      .notfound-card:hover .notfound-gap { animation: craft-pop 420ms var(--ease-out); }
+    }
+
+    /* ---------- Archive rows ---------- */
+    .archive-row-chevron { transition: transform 160ms var(--ease-out); }
+    @media (hover: hover) and (pointer: fine) { tr:hover .archive-row-chevron, .archive-card:hover .archive-row-chevron { transform: translateX(2px); } }
+
+    /* ---------- Signature pad guide ---------- */
+    .signature-guide { position: absolute; inset: 0; margin: auto; width: 70%; max-width: 16rem; height: auto; color: #8aa3b5; opacity: 0.45; pointer-events: none; }
+    .signature-guide path { stroke-dasharray: 1; stroke-dashoffset: 0; }
+    @media (prefers-reduced-motion: no-preference) {
+      :is(.signature-drop:hover, .signature-drop:focus-within) .signature-guide path { animation: glyph-draw 900ms var(--ease-out) both; }
+    }
+    /* Signature moment: a freshly saved signature is revealed left to right (display only; bytes untouched). */
+    @media (prefers-reduced-motion: no-preference) { .signature-reveal { animation: signature-reveal 700ms var(--ease-out) both; } }
+
+    /* ---------- Signing-route diagram ---------- */
+    .route-marker-halo { box-shadow: 0 0 0 4px rgb(11 98 93 / 8%), inset 0 1px 0 rgb(255 255 255 / 60%); }
+    .route-rail-step { transition: background-color 160ms ease; }
+    @media (hover: hover) and (pointer: fine) { .route-rail-step:hover::after { opacity: 1; } }
+
+    /* ---------- Directory avatars ---------- */
+    .preci-avatar { box-shadow: inset 0 1px 0 rgb(255 255 255 / 55%), 0 0 0 1px rgb(16 32 48 / 8%); }
+    .preci-directory-row .manage-icon { transition: transform 160ms var(--ease-out); }
+    @media (hover: hover) and (pointer: fine) { .preci-directory-row:hover .manage-icon { transform: rotate(-8deg) translateX(1px); } }
+
+    /* ---------- Branding drop zone: dashes march slowly on hover ---------- */
+    .logo-drop { background-image: none; }
+    .logo-drop-glyph { transition: transform 200ms var(--ease-out); color: var(--color-workspace-teal); }
+    @media (hover: hover) and (pointer: fine) { .logo-drop:hover .logo-drop-glyph { transform: translateY(-2px); } }
+
+    /* ---------- Header bell ---------- */
+    .bell-icon { transform-origin: 50% 10%; transition: transform 200ms var(--ease-out); }
+    @media (hover: hover) and (pointer: fine) { .bell-button:hover .bell-icon { transform: rotate(6deg); } }
+    @media (prefers-reduced-motion: no-preference) { .bell-ring .bell-icon { animation: bell-ring 700ms var(--ease-out) 1; } }
+
+    /* ---------- Skeletons and crossfade ---------- */
+    .skeleton { position: relative; overflow: hidden; border-radius: 0.5rem; background: #e9eef2; }
+    @media (prefers-reduced-motion: no-preference) {
+      .skeleton::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgb(255 255 255 / 55%), transparent); animation: skeleton-sweep 1.6s ease-in-out infinite; }
+    }
+    .fade-in { animation: craft-fade 220ms ease both; }
+
+    /* ---------- Live stepper ---------- */
+    .step-just-signed { animation: craft-pop 320ms var(--ease-out) both; }
+    @media (prefers-reduced-motion: no-preference) { .step-current-pulse { animation: step-pulse 1.4s var(--ease-out) 400ms 1; } }
+    .step-connector-fill { transform-origin: left center; animation: connector-fill 420ms var(--ease-out) both; }
+    @media (max-width: 639px) { .step-connector-fill { transform-origin: center top; animation-name: connector-fill-y; } }
+
+    /* ---------- Number ticker ---------- */
+    .ticker { display: inline-block; font-variant-numeric: tabular-nums; }
+    .ticker[data-changed="true"] { animation: ticker-in 260ms var(--ease-out) both; }
+
+    /* ---------- Tactile checkboxes ---------- */
+    main input[type="checkbox"]:not(.sr-only):not([role="switch"]):not(:is(.printable-area, .admin-work-document, .document-preview-page, .editor-preview) *) {
+      appearance: none; -webkit-appearance: none; flex-shrink: 0; width: 1rem; height: 1rem; margin: 0;
+      border: 1.5px solid #9fb1c0; border-radius: 0.3125rem; background: #fff center / 0.75rem no-repeat;
+      display: inline-grid; place-items: center; cursor: pointer;
+      transition: background-color 120ms ease, border-color 120ms ease, transform 120ms var(--ease-out);
+    }
+    main input[type="checkbox"]:not(.sr-only):not(:is(.printable-area, .admin-work-document, .document-preview-page, .editor-preview) *)::after {
+      content: ""; width: 0.55rem; height: 0.3rem; margin-top: -0.125rem; border: solid #fff; border-width: 0 0 2px 2px;
+      transform: rotate(-45deg); clip-path: inset(0 100% 0 0); transition: clip-path 120ms var(--ease-out);
+    }
+    main input[type="checkbox"]:not(.sr-only):not(:is(.printable-area, .admin-work-document, .document-preview-page, .editor-preview) *):checked { background-color: var(--color-workspace-teal); border-color: var(--color-workspace-teal); }
+    main input[type="checkbox"]:not(.sr-only):not(:is(.printable-area, .admin-work-document, .document-preview-page, .editor-preview) *):checked::after { clip-path: inset(0 0 0 0); }
+    main input[type="checkbox"]:not(.sr-only):not(:is(.printable-area, .admin-work-document, .document-preview-page, .editor-preview) *):active:not(:disabled) { transform: scale(0.92); }
+    main input[type="checkbox"]:not(.sr-only):not(:is(.printable-area, .admin-work-document, .document-preview-page, .editor-preview) *):disabled { opacity: 0.5; cursor: not-allowed; }
+    main input[type="checkbox"]:not(.sr-only):not(:is(.printable-area, .admin-work-document, .document-preview-page, .editor-preview) *):focus-visible { outline: 2px solid var(--color-workspace-teal); outline-offset: 2px; }
+
+    /* ---------- Shared-element transition (request title) ---------- */
+    ::view-transition-group(request-title) { animation-duration: 260ms; animation-timing-function: var(--ease-out); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .morph-face, .icon-morph > * { transform: none !important; filter: none !important; }
+    .preci-toast { transform: none; transition: opacity 200ms ease; }
+    .sheet { transition: none; }
+    .review-aside-sheet { animation: none !important; }
+    .seg-pill { transition: opacity 120ms ease; }
+    .reveal { transition: none; }
+    .hover-preview { transform: none; }
+    main input[type="checkbox"] { transition: none; }
+    ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+  }
+
+  @media print {
+    .preci-toaster, .command-palette, .sheet, .sheet-backdrop, .hover-preview, .page-hero-motif, .signature-guide { display: none !important; }
+  }
+}
+
+@keyframes glyph-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes craft-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes craft-pop { 0% { transform: scale(0.85); } 60% { transform: scale(1.06); } 100% { transform: scale(1); } }
+@keyframes craft-chip { from { opacity: 0.4; transform: scale(0.96); filter: blur(1px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes craft-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes signature-reveal { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes bell-ring { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(14deg); } 40% { transform: rotate(-10deg); } 60% { transform: rotate(6deg); } 80% { transform: rotate(-3deg); } }
+@keyframes skeleton-sweep { to { transform: translateX(100%); } }
+@keyframes connector-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes connector-fill-y { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes step-pulse { 0% { box-shadow: 0 0 0 0 rgb(14 116 144 / 28%); } 100% { box-shadow: 0 0 0 10px rgb(14 116 144 / 0%); } }
+@keyframes sheet-in { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes sheet-out { from { transform: none; } to { transform: translateY(100%); } }
+@keyframes ticker-in { from { opacity: 0; transform: translateY(40%); } to { opacity: 1; transform: none; } }
+
+/* Unlayered on purpose: these must win over the unlayered editor toggle styles in workspace-ui.css. */
+@media screen {
+  .editor-view-toggle.seg-group button[aria-pressed="true"] { background: transparent; color: #fff; }
+  .editor-view-toggle.seg-group button { position: relative; transition: color 160ms ease; }
+}
