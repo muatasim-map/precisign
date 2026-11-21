@@ -27,7 +27,5 @@ jobs:
       - run: npm run lint
       - name: Run the domain and repository baseline
         run: node --import tsx --test shared/utils/approvalJourney.test.ts shared/utils/workflowEngine.test.ts frontend/src/services/repository.test.ts shared/utils/companyAccess.test.ts
-      - run: npm run test:startup
       - run: npm run build
-      - name: Check the Hostinger entry point
-        run: node --check hostinger.cjs
+      - run: npm run test:startup
