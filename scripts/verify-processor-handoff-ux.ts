@@ -344,6 +344,19 @@ try {
         await shot(page, 'craft-command-palette-desktop');
         await page.keyboard.press('Escape');
       }
+      // First-time guide: Afzal hasn't submitted anything, so it shows; "Got it" is remembered after a refresh.
+      if (!label.startsWith('before')) {
+        const guide = page.getByRole('region', { name: 'How a PreciRoute travels' });
+        await guide.waitFor();
+        await guide.scrollIntoViewIfNeeded();
+        await page.waitForTimeout(700);
+        await shot(page, 'craft-first-route-guide-desktop');
+        await guide.getByRole('button', { name: 'Got it' }).click();
+        await page.reload();
+        await page.locator('h1').first().waitFor();
+        assert.equal(await page.getByRole('region', { name: 'How a PreciRoute travels' }).count(), 0, 'Dismissed guide must stay hidden');
+        console.log('  first-route guide: shown, dismissed, stays hidden');
+      }
       // Tab badge: Afzal has a request waiting, so the icon carries the dot (a data: URL).
       if (!label.startsWith('before')) {
         await page.waitForTimeout(400);
@@ -352,6 +365,14 @@ try {
         console.log('  favicon badge: on');
       }
     } else {
+      // First-time guide on phones: stacks as rows with the art beside the text, without sideways scroll.
+      if (!label.startsWith('before')) {
+        const guide = page.getByRole('region', { name: 'How a PreciRoute travels' });
+        await guide.waitFor();
+        await guide.scrollIntoViewIfNeeded();
+        await page.waitForTimeout(700);
+        await shot(page, 'craft-first-route-guide-mobile');
+      }
       // Request page on phones: "Go to actions" lifts the actions column into a sheet.
       await page.goto(origin + path);
       const actions = page.getByRole('button', { name: 'Go to actions' });

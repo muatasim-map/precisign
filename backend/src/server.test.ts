@@ -8,9 +8,55 @@ import { DatabaseSync } from 'node:sqlite';
 import { openDatabase, transaction, schemaVersion } from './db';
 import { hashPassword, verifyPassword, provisionUser, registerAccount, sessionLifetime, createSession, sessionUser } from './auth';
 import { createApp } from './app';
+import { MockEmailTransport } from './email';
 
 const account = { email: 'worker@example.test', name: 'Test Worker', department: 'Test', role: 'Admin' as const, companyId: 'PEW' as const };
 const password = 'Synthetic-test-password-123';
+
+test('a signed-out super admin can recover through their registered email', async () => {
+  const db = openDatabase(':memory:');
+  const userId = await provisionUser(db, account, password);
+  db.prepare('INSERT INTO account_access (user_id, is_super_admin) VALUES (?, 1)').run(userId);
+  const regularEmail = 'regular-admin@example.test';
+  const regularId = await provisionUser(db, { ...account, email: regularEmail }, password);
+  const origin = 'http://localhost:3000';
+  const transport = new MockEmailTransport();
+  const app = await createApp(db, { origin, secureCookies: false, emailTransport: transport });
+  const server = app.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}/api`;
+  const post = (path: string, body: unknown) => fetch(base + path, {
+    method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  try {
+    const missing = await post('/auth/forgot-password', { email: 'missing@example.test' });
+    const regular = await post('/auth/forgot-password', { email: regularEmail });
+    const existing = await post('/auth/forgot-password', { email: account.email });
+    assert.equal(missing.status, 202);
+    assert.equal(regular.status, 202);
+    assert.equal(existing.status, 202);
+    const response = await existing.json();
+    assert.deepEqual(await missing.json(), response);
+    assert.deepEqual(await regular.json(), response);
+    assert.equal(db.prepare('SELECT user_id FROM password_resets WHERE user_id=?').get(regularId), undefined);
+    assert.equal(transport.sent.length, 1);
+    assert.equal(transport.sent[0].to, account.email);
+    const token = transport.sent[0].text?.match(/#reset=([a-f0-9]{64})/)?.[1];
+    assert.ok(token);
+    await post('/auth/forgot-password', { email: account.email });
+    assert.equal(transport.sent.length, 1);
+    const newPassword = 'New-synthetic-password-123';
+    assert.equal((await post('/auth/reset-password', { token, newPassword })).status, 204);
+    assert.equal((await post('/auth/reset-password', { token, newPassword })).status, 400);
+    const login = await post('/auth/login', { email: account.email, password: newPassword });
+    assert.equal(login.status, 200);
+    assert.equal((await login.json()).user.isSuperAdmin, true);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    db.close();
+  }
+});
 
 test('temporary password sessions are restricted and password changes revoke all sessions', async () => {
   const db = openDatabase(':memory:');
@@ -215,7 +261,10 @@ test('HTTPS mode sets secure cookies and rejects insecure origin configuration',
     const me = () => fetch(`${base}/api/auth/me`, { headers: { Cookie: cookie } });
     const profile = await response.json();
     assert.equal(profile.user.canReplaceFinalApprover, true);
-    assert.deepEqual(profile, await (await me()).json());
+    // /auth/me also reports when the session ends (for the expiry warning); the profile must still match sign-in.
+    const current = await (await me()).json();
+    assert.equal(typeof current.sessionExpiresAt, 'number');
+    assert.deepEqual(profile, { user: current.user });
 
     db.exec("CREATE TRIGGER fail_session BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT, 'synthetic insert failure'); END;");
     const failed = await login(cookie);
@@ -234,7 +283,7 @@ test('password hashing is salted, bounded and verifies safely', async () => {
   assert.equal(await verifyPassword(password, first), true);
   assert.equal(await verifyPassword('wrong', first), false);
   assert.equal(await verifyPassword(password, 'malformed'), false);
-  await assert.rejects(hashPassword('short'));
+  await assert.rejects(hashPassword('abcd'));
   await assert.rejects(hashPassword('x'.repeat(1025)));
 });
 
@@ -310,4 +359,38 @@ test('HTTP login, cookies, expiry, independent sessions, origin checks and logou
     await login({ email: 'missing@example.test', password });
     assert.equal((await login({ email: account.email, password })).status, 429);
   } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); db.close(); }
+});
+
+test('password rule: five characters, never the email, and the wait time is stated when limited', async () => {
+  const db = openDatabase(':memory:');
+  await provisionUser(db, account, password);
+  const origin = 'http://localhost:3000';
+  const app = await createApp(db, { origin, secureCookies: false, loginLimit: 2 });
+  const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}/api`;
+  const post = (path: string, body: unknown, cookie = '') => fetch(base + path, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify(body) });
+  try {
+    const login = await post('/auth/login', { email: account.email, password });
+    const cookie = login.headers.get('set-cookie')!.split(';')[0];
+    const change = (newPassword: string) => post('/auth/change-password', { currentPassword: password, newPassword }, cookie);
+    const four = await change('abcd');
+    assert.equal(four.status, 400); assert.match((await four.json()).error, /at least 5/i);
+    const mail = await change(account.email);
+    assert.equal(mail.status, 400); assert.match((await mail.json()).error, /email/i);
+    assert.equal((await change('abcde')).status, 204);
+    // Signing in with the new five-character password works, and the profile reports when the session ends.
+    const again = await post('/auth/login', { email: account.email, password: 'abcde' });
+    assert.equal(again.status, 200);
+    const me = await (await fetch(base + '/auth/me', { headers: { Cookie: again.headers.get('set-cookie')!.split(';')[0] } })).json();
+    assert.ok(me.sessionExpiresAt > Date.now());
+    // The limit message says how long to wait, and the response carries Retry-After.
+    assert.equal((await post('/auth/login', { email: account.email, password: 'nope1' })).status, 401);
+    assert.equal((await post('/auth/login', { email: account.email, password: 'nope2' })).status, 401);
+    const limited = await post('/auth/login', { email: account.email, password: 'nope3' });
+    assert.equal(limited.status, 429);
+    assert.match((await limited.json()).error, /Try again in \d+ minutes?\./);
+    assert.ok(Number(limited.headers.get('retry-after')) >= 60);
+  } finally {
+    server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); db.close();
+  }
 });

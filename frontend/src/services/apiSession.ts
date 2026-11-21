@@ -45,10 +45,10 @@ export class ApiSession {
       captureFrontendError(error, { flow: 'sign-in' });
       if (generation === this.generation) {
         const errorText = error instanceof ApiError && error.status === 401
-          ? 'Invalid email or password.'
+          ? 'Invalid email or password. Check Caps Lock, or ask your super admin for a reset link.'
           : error instanceof ApiError && error.status === 429
-            ? (error.message || 'Too many attempts. Try again later.')
-            : 'Could not sign in. Please retry.';
+            ? (error.message || 'Too many attempts. Try again in a few minutes.')
+            : 'Couldn’t sign in. Check your connection and try again.';
         this.set({ status: 'failed', error: errorText });
       }
     }

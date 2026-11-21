@@ -21,6 +21,7 @@ test('super-admin directory preserves identity, revokes sessions, and clears acc
   const adminEmail = remote ? `admin-${suffix}@example.test` : 'admin@example.test';
   const workerEmail = remote ? `worker-${suffix}@example.test` : 'worker@example.test';
   const newEmail = remote ? `new-${suffix}@example.test` : 'new@example.test';
+  const createEmail = `created-${suffix}@example.test`;
   const requestId = remote ? randomUUID() : 'request';
   const addUser = async (name: string, email: string) => {
     if (local) return provisionUser(local, {name, email, department:'Test', role:'Admin', companyId:'PEW'}, password);
@@ -53,6 +54,19 @@ test('super-admin directory preserves identity, revokes sessions, and clears acc
     method: 'PATCH', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
   try {
+    const create = (cookie: string, email: string) => fetch(base, {
+      method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'New employee', email, department: 'Accounts', password, role: 'Finance' }),
+    });
+    assert.equal((await create(user, createEmail)).status, 403);
+    const creation = await create(admin, createEmail);
+    assert.equal(creation.status, 201);
+    const created = await creation.json();
+    assert.equal(created.role, 'Finance');
+    const access = (await execute('SELECT must_change_password, is_super_admin FROM account_access WHERE user_id=?', created.id))[0];
+    assert.equal(access.must_change_password, 1);
+    assert.equal(access.is_super_admin, 0);
+    assert.equal((await create(admin, createEmail.toUpperCase())).status, 409);
     const userSession = { headers: { Cookie: user } };
     const bootstrap = new URL('/api/bootstrap', base);
     const changeGrants = (forms: string[]) => fetch(`${base}/${userId}/grants`, {
@@ -81,6 +95,7 @@ test('super-admin directory preserves identity, revokes sessions, and clears acc
     assert.equal((await lookupSession(oldToken))?.role, 'Employee');
     const accounts = await (await get(admin)).json();
     assert.ok(accounts.some((account: { id: string }) => account.id === userId));
+    assert.equal(accounts.find((account: { id: string }) => account.id === created.id)?.role, 'Finance');
     assert.equal(JSON.stringify(accounts).includes('password_hash'), false);
     assert.equal((await patch(adminId, admin, { isDisabled: true })).status, 409);
     assert.equal((await patch(userId, admin, { email: adminEmail.toUpperCase() })).status, 409);
@@ -100,7 +115,7 @@ test('super-admin directory preserves identity, revokes sessions, and clears acc
     server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
     if (remote) await remote.transaction(async tx => {
       await tx.execute('DELETE FROM requests WHERE id=?', [requestId]);
-      await tx.execute('DELETE FROM users WHERE id IN (?,?)', [adminId,userId]);
+      await tx.execute('DELETE FROM users WHERE id IN (?,?) OR email=?', [adminId,userId,createEmail]);
     });
     db.close();
   }

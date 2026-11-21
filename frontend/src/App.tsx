@@ -24,7 +24,7 @@ import { AccountDirectoryView } from './components/settings/AccountDirectoryView
 import type { UserProfile } from './types';
 import { RequestCompanyField } from './components/create/RequestCompanyField';
 import { canUserStartForm } from './utils/companyAccess';
-import { Building2, Check, Eye, EyeOff, KeyRound, Mail, PenLine, UserRound, ArrowRight } from 'lucide-react';
+import { Building2, Check, Mail, PenLine, UserRound, ArrowRight } from 'lucide-react';
 import { AuthLayout } from './components/layout/AuthLayout';
 import { Router, Route, Switch, Redirect, useLocation, Link } from 'wouter';
 import { PageTitle } from './navigation/PageTitle';
@@ -33,6 +33,10 @@ import { ProtectedRoute } from './components/common/ProtectedRoute';
 import { NotFoundPage } from './components/common/NotFoundPage';
 import { useProductTour } from './components/tour/useProductTour';
 import { Toaster } from './components/common/Toaster';
+import { PasswordField } from './components/common/PasswordField';
+import { MorphButton } from './components/common/MorphButton';
+import { AuthCard } from './components/layout/AuthCard';
+import { passwordProblem } from '../../shared/utils/passwordPolicy';
 import { RequestSkeleton } from './components/common/Skeletons';
 import { CommandPalette } from './components/common/CommandPalette';
 
@@ -257,6 +261,7 @@ const ApiApp: React.FC = () => {
   const [passwordChangeBusy, setPasswordChangeBusy] = React.useState(false);
   const [connectionError, setConnectionError] = React.useState('');
   const [expired, setExpired] = React.useState(false);
+  const [minutesLeft, setMinutesLeft] = React.useState<number | null>(null);
   const [reauthPassword, setReauthPassword] = React.useState('');
   const [reauthBusy, setReauthBusy] = React.useState(false);
   const [resetToken, setResetToken] = React.useState(() => {
@@ -265,8 +270,8 @@ const ApiApp: React.FC = () => {
     return token;
   });
   const [resetMessage, setResetMessage] = React.useState('');
+  const [resetRequestBusy, setResetRequestBusy] = React.useState(false);
   const [forgot, setForgot] = React.useState(false);
-  const [showPassword, setShowPassword] = React.useState(false);
   const repository = React.useMemo(() => new ApiPreciSignRepository(), []);
   const session = React.useMemo(() => new ApiSession(repository, setState), [repository]);
   React.useEffect(() => {
@@ -284,58 +289,86 @@ const ApiApp: React.FC = () => {
     const timer = window.setInterval(() => { void repository.getCurrentUser().then(() => { if (active) setConnectionError(''); }).catch(error => { if (!active) return; if (error instanceof ApiError && error.status === 401) setExpired(true); else setConnectionError('Connection lost. Your entered information is kept here. Check the connection before saving again.'); }); }, 30000);
     return () => { active = false; window.clearInterval(timer); };
   }, [state.status, repository, session]);
-  if (resetToken) return <div className="min-h-screen flex items-center justify-center p-6"><form className="w-full max-w-sm bg-white border rounded-lg p-6 space-y-4" onSubmit={async event => {
-    event.preventDefault(); if (passwordChangeBusy) return; setPasswordChangeBusy(true); setResetMessage('');
-    try { await repository.resetPassword(resetToken, newPassword); setResetToken(''); setNewPassword(''); setResetMessage('Password changed. Please sign in.'); await session.restore(); }
-    catch { setResetMessage('Could not reset password. The link may have expired or already been used.'); }
-    finally { setPasswordChangeBusy(false); }
-  }}><h1 className="text-xl font-bold">Set a new password</h1>
-    {resetMessage && <p role="status">{resetMessage}</p>}
-    <label className="block text-sm">New password<input className="mt-1 w-full border rounded p-2" type="password" autoComplete="new-password" minLength={12} maxLength={1024} required value={newPassword} onChange={e => setNewPassword(e.target.value)} /></label>
-    <button disabled={passwordChangeBusy} className="w-full rounded bg-[#365C78] text-white p-2">Set password</button>
-    <button type="button" className="underline" onClick={() => setResetToken('')}>Back to sign in</button>
-  </form></div>;
+  // Learn when this session ends as soon as we're signed in (the 30s check above refreshes it afterwards).
+  React.useEffect(() => { if (state.status === 'authenticated') void repository.getCurrentUser().catch(() => undefined); }, [state.status, repository]);
+  // Warn in the last 5 minutes of the session; the end time comes from /auth/me.
+  React.useEffect(() => {
+    if (state.status !== 'authenticated' || expired) { setMinutesLeft(null); return undefined; }
+    const check = () => {
+      const end = repository.sessionExpiresAt;
+      const left = end ? Math.ceil((end - Date.now()) / 60000) : null;
+      setMinutesLeft(left !== null && left > 0 && left <= 5 ? left : null);
+    };
+    check();
+    const timer = window.setInterval(check, 15000);
+    return () => window.clearInterval(timer);
+  }, [state.status, expired, repository]);
+  if (resetToken) return <AuthCard eyebrow="Password reset" title="Set a new password" intro="Choose a password you’ll remember. This link works once.">
+    <form className="space-y-4" onSubmit={async event => {
+      event.preventDefault(); if (passwordChangeBusy) return;
+      const weak = passwordProblem(newPassword);
+      if (weak) { setResetMessage(weak); return; }
+      setPasswordChangeBusy(true); setResetMessage('');
+      try { await repository.resetPassword(resetToken, newPassword); setResetToken(''); setNewPassword(''); setResetMessage('Password changed. Sign in with your new password.'); await session.restore(); }
+      catch (error) { setResetMessage(error instanceof ApiError && error.status === 400 && error.code === 'PASSWORD_POLICY' ? error.message : 'This reset link has expired or was already used. Ask your super admin for a new one.'); }
+      finally { setPasswordChangeBusy(false); }
+    }}>
+      {resetMessage && <p role="alert" className="preci-error">{resetMessage}</p>}
+      <PasswordField label="New password" autoComplete="new-password" value={newPassword} onChange={setNewPassword} showRules />
+      <MorphButton type="submit" variant="primary" size="lg" className="w-full" state={passwordChangeBusy ? 'busy' : 'idle'} busyLabel="Saving…" disabled={!!passwordProblem(newPassword)}>Set password</MorphButton>
+      <button type="button" className="preci-link" onClick={() => setResetToken('')}>Back to sign in</button>
+    </form>
+  </AuthCard>;
   if (state.status === 'authenticated') return <AppProvider apiData={state} apiRepository={repository}>
     {connectionError && <p role="alert" className="px-6 py-2 text-xs text-rose-700">{connectionError}</p>}
-    <div hidden={expired} inert={expired}><RoutedMainLayout repository={repository} onSignOut={() => { setPassword(''); setShowPassword(false); void session.logout(); }} /></div>
-    {expired && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-6"><form className="bg-white rounded-lg p-6 space-y-4 max-w-sm" onSubmit={async event => {
+    {minutesLeft !== null && !expired && <div role="status" className="session-warning no-print">
+      <span className="min-w-0 flex-1">Your session ends in {minutesLeft} minute{minutesLeft === 1 ? '' : 's'}. Save your work.</span>
+      <button type="button" className="workspace-control preci-press min-h-9 px-3 text-xs font-semibold text-slate-800" onClick={() => setExpired(true)}>Sign in again</button>
+    </div>}
+    <div hidden={expired} inert={expired}><RoutedMainLayout repository={repository} onSignOut={() => { setPassword(''); void session.logout(); }} /></div>
+    {expired && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-6"><form className="auth-card w-full space-y-4 rounded-2xl bg-white p-6 shadow-xl" onSubmit={async event => {
       event.preventDefault(); if (reauthBusy) return; setReauthBusy(true);
       try {
         const user = await repository.login(state.bootstrap.user.email, reauthPassword);
         if (user.id !== state.bootstrap.user.id) throw new Error('Sign in as the original user to continue.');
+        await repository.getCurrentUser();
         setExpired(false); setConnectionError(''); setReauthPassword('');
-      } catch { setConnectionError('Could not restore your session. Check your password and connection.'); }
+      } catch (error) { setConnectionError(error instanceof ApiError && error.status === 429 ? (error.message || 'Too many attempts. Try again in a few minutes.') : 'That password didn’t work, or the connection dropped. Check both and try again.'); }
       finally { setReauthBusy(false); }
-    }}><p className="text-sm">Your session expired. Sign in again as {state.bootstrap.user.name} to keep working. Your entries are preserved.</p>
-      {connectionError && <p role="alert" className="text-xs text-rose-700">{connectionError}</p>}
-      <input aria-label="Session password" type="password" required value={reauthPassword} onChange={e => setReauthPassword(e.target.value)} className="w-full border rounded p-2" />
-      <button disabled={reauthBusy} className="bg-[#365C78] text-white rounded p-2">Restore session</button>
-      <button type="button" className="underline text-sm text-slate-600 block w-full text-center hover:text-slate-900" onClick={() => { setExpired(false); void session.logout(); }}>Sign out</button>
+    }}>
+      <div><p className="preci-eyebrow">Session ended</p><h2 className="mt-1 text-xl font-bold text-workspace-ink">Sign in again to keep working</h2>
+        <p className="mt-1 text-sm text-workspace-muted">You were signed in as {state.bootstrap.user.name}. Your open page and entries are kept exactly as you left them.</p></div>
+      {connectionError && <p role="alert" className="preci-error">{connectionError}</p>}
+      <PasswordField label="Password" autoComplete="current-password" value={reauthPassword} onChange={setReauthPassword} />
+      <MorphButton type="submit" variant="primary" size="lg" className="w-full" state={reauthBusy ? 'busy' : 'idle'} busyLabel="Signing in…">Restore session</MorphButton>
+      <button type="button" className="preci-link" onClick={() => { setExpired(false); void session.logout(); }}>Sign out instead</button>
     </form></div>}
   </AppProvider>;
   if (state.status === 'loading' && !loginBusy && !signupBusy) return <AuthLayout><p role="status" className="text-sm font-semibold text-workspace-muted">Connecting to PreciSign…</p></AuthLayout>;
-  if (state.status === 'password-change') return <div className="min-h-screen flex items-center justify-center p-6"><form className="w-full max-w-sm bg-white border rounded-lg p-6 space-y-4" onSubmit={async event => {
-    event.preventDefault();
-    if (passwordChangeBusy) return;
-    setPasswordChangeBusy(true);
-    setPasswordChangeError('');
-    try {
-      await repository.changePassword(password, newPassword);
-      setPassword(''); setNewPassword('');
-      setResetMessage('Password changed successfully. Please sign in with your new password.');
-      await session.restore();
-    } catch {
-      setPasswordChangeError('Could not change password. Check your current password and try again.');
-    } finally { setPasswordChangeBusy(false); }
-  }}>
-    <h1 className="text-xl font-bold">Choose a new password</h1>
-    <p className="text-sm">Change your temporary password to continue as {state.user.name}.</p>
-    {passwordChangeError && <p role="alert">{passwordChangeError}</p>}
-    <label className="block text-sm">Current password<input className="mt-1 w-full border rounded p-2" type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} /></label>
-    <label className="block text-sm">New password<input className="mt-1 w-full border rounded p-2" type="password" autoComplete="new-password" minLength={12} maxLength={1024} required value={newPassword} onChange={e => setNewPassword(e.target.value)} /></label>
-    <button disabled={passwordChangeBusy} className="w-full rounded bg-[#365C78] text-white p-2">Change password</button>
-    <button type="button" className="underline" onClick={() => { setPassword(''); setNewPassword(''); void session.logout(); }}>Sign out</button>
-  </form></div>;
+  if (state.status === 'password-change') return <AuthCard eyebrow="First sign-in" title="Choose a new password" intro={<>Change your temporary password to continue as {state.user.name}.</>}>
+    <form className="space-y-4" onSubmit={async event => {
+      event.preventDefault();
+      if (passwordChangeBusy) return;
+      const weak = passwordProblem(newPassword, state.user.email);
+      if (weak) { setPasswordChangeError(weak); return; }
+      setPasswordChangeBusy(true);
+      setPasswordChangeError('');
+      try {
+        await repository.changePassword(password, newPassword);
+        setPassword(''); setNewPassword('');
+        setResetMessage('Password changed. Sign in with your new password.');
+        await session.restore();
+      } catch (error) {
+        setPasswordChangeError(error instanceof ApiError && error.status === 403 ? 'Your current (temporary) password didn’t match. Check it and try again.' : error instanceof ApiError && error.status === 400 && error.code === 'PASSWORD_POLICY' ? error.message : 'Couldn’t change the password. Check your connection and try again.');
+      } finally { setPasswordChangeBusy(false); }
+    }}>
+      {passwordChangeError && <p role="alert" className="preci-error">{passwordChangeError}</p>}
+      <PasswordField label="Current (temporary) password" autoComplete="current-password" value={password} onChange={setPassword} />
+      <PasswordField label="New password" autoComplete="new-password" value={newPassword} onChange={setNewPassword} email={state.user.email} showRules />
+      <MorphButton type="submit" variant="primary" size="lg" className="w-full" state={passwordChangeBusy ? 'busy' : 'idle'} busyLabel="Saving…" disabled={!!passwordProblem(newPassword, state.user.email) || !password}>Change password</MorphButton>
+      <button type="button" className="preci-link" onClick={() => { setPassword(''); setNewPassword(''); void session.logout(); }}>Sign out</button>
+    </form>
+  </AuthCard>;
   const signatureUser: UserProfile = { id: '', name: name.trim(), email, role: 'Admin', department, initials: '', avatarColor: '#365C78', companyId: 'PEW' };
   return <AuthLayout><form className="preci-auth-form" onSubmit={async (event) => {
     event.preventDefault();
@@ -343,7 +376,7 @@ const ApiApp: React.FC = () => {
       if (loginBusy) return;
       setLoginBusy(true);
       try { await session.login(email, password); }
-      finally { setPassword(''); setShowPassword(false); setLoginBusy(false); }
+      finally { setPassword(''); setLoginBusy(false); }
       return;
     }
     if (signupBusy) return;
@@ -375,24 +408,32 @@ const ApiApp: React.FC = () => {
       </div>}
       <label className="preci-field">Email<span className="preci-auth-input"><Mail aria-hidden="true" /><input type="email" autoComplete={signup ? 'email' : 'username'} required value={email} onChange={e => setEmail(e.target.value)} /></span></label>
       <div>
-        <label htmlFor="account-password" className="preci-field">Password</label>
-        <div className="preci-auth-input">
-          <KeyRound aria-hidden="true" />
-          <input id="account-password" type={showPassword ? 'text' : 'password'} autoComplete={signup ? 'new-password' : 'current-password'} minLength={signup ? 12 : undefined} maxLength={1024} required aria-describedby={signup ? 'account-password-hint' : undefined} value={password} onChange={e => setPassword(e.target.value)} />
-          <button type="button" aria-label={showPassword ? 'Hide password' : 'Show password'} className="preci-icon-button" onClick={() => setShowPassword(value => !value)}>{showPassword ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}</button>
-        </div>
-        {signup ? <p id="account-password-hint" className="mt-1.5 text-xs text-workspace-muted">Use at least 12 characters.</p>
-        : <button className="preci-link mt-2" type="button" aria-expanded={forgot} onClick={() => setForgot(value => !value)}>Forgot password?</button>}
-        {!signup && forgot && <p className="mt-2 rounded-lg bg-workspace p-3 text-sm text-workspace-muted">Contact your super admin for a private password reset link.</p>}
+        <PasswordField id="account-password" label="Password" autoComplete={signup ? 'new-password' : 'current-password'} value={password} onChange={setPassword} email={signup ? email : undefined} showRules={signup} />
+        {!signup && <button className="preci-link mt-2" type="button" aria-expanded={forgot} onClick={() => setForgot(value => !value)}>Forgot password?</button>}
+        {!signup && forgot && <div className="mt-2 space-y-2 rounded-lg bg-workspace p-3 text-sm text-workspace-muted">
+          <p>Super admins can request a reset by email. For other accounts, contact your super admin for a private reset link.</p>
+          <button type="button" className="preci-link" disabled={resetRequestBusy || !email.trim()} onClick={async () => {
+            setResetRequestBusy(true);
+            try {
+              await repository.requestPasswordReset(email);
+              setResetMessage('If this email belongs to an active super admin, check your inbox for a reset link.');
+            } catch {
+              setResetMessage('Could not request a reset link. Please try again shortly.');
+            } finally {
+              setResetRequestBusy(false);
+            }
+          }}>{resetRequestBusy ? 'Requesting…' : 'Send super admin reset link'}</button>
+        </div>}
       </div>
       {signup && <div className="rounded-lg border border-workspace-line bg-workspace/50 p-3">
         <button type="button" className="preci-link flex items-center gap-2" disabled={!name.trim()} onClick={() => setShowSignature(true)}>{signatureDataUrl ? <Check aria-hidden="true" className="size-4" /> : <PenLine aria-hidden="true" className="size-4" />}{signatureDataUrl ? 'Edit saved signature' : 'Add a signature (optional)'}</button>
         {!name.trim() && <p className="mt-1 pl-6 text-xs text-workspace-muted">Enter your name to set up a signature.</p>}
       </div>}
-      <button className="workspace-primary preci-press flex min-h-11 w-full items-center justify-center gap-2 px-4 py-2.5 text-sm" type="submit">
-        {signupBusy ? 'Creating account…' : loginBusy ? 'Signing in…' : signup ? 'Create account' : 'Sign in'}
-        {!signupBusy && !loginBusy && <ArrowRight aria-hidden="true" className="size-4" />}
-      </button>
+      <MorphButton type="submit" variant="primary" size="lg" className="w-full" icon={ArrowRight}
+        state={signupBusy || loginBusy ? 'busy' : 'idle'} busyLabel={signup ? 'Creating account…' : 'Signing in…'}
+        disabled={signup && !!passwordProblem(password, email)}>
+        {signup ? 'Create account' : 'Sign in'}
+      </MorphButton>
     </fieldset>
     <p className="border-t border-workspace-line pt-4 text-center text-sm text-workspace-muted">
       Need an account? Contact your administrator.

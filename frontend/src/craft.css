@@ -292,3 +292,39 @@
   .editor-view-toggle.seg-group button[aria-pressed="true"] { background: transparent; color: #fff; }
   .editor-view-toggle.seg-group button { position: relative; transition: color 160ms ease; }
 }
+
+/* ---------- Auth screens: password rules, caps lock, session expiry ---------- */
+@media screen {
+  .auth-rule { color: var(--color-workspace-muted); transition: color 160ms ease; }
+  .auth-rule[data-ok="true"] { color: #0b625d; }
+  .auth-rule-dot { display: grid; place-items: center; width: 0.875rem; height: 0.875rem; flex-shrink: 0; border-radius: 999px; border: 1.5px solid #b8c4cf; color: #fff;
+    transition: background-color 160ms ease, border-color 160ms ease, transform 160ms var(--ease-out); }
+  .auth-rule[data-ok="true"] .auth-rule-dot { background: #0b625d; border-color: #0b625d; transform: scale(1.05); }
+  .auth-caps { animation: craft-fade 160ms ease both; }
+  .auth-card { width: min(28rem, 100%); }
+  .session-warning { position: fixed; z-index: 58; inset-inline: 1rem; bottom: 1rem; margin-inline: auto; width: min(26rem, calc(100vw - 2rem));
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; padding: 0.75rem 0.875rem; border: 1px solid #f1d9a8; border-radius: 0.75rem; background: #fffaf0; color: #7a4a00; font-size: 0.8125rem;
+    box-shadow: 0 12px 28px -12px rgb(16 32 48 / 28%); animation: craft-rise 260ms var(--ease-out) both; }
+}
+@media (prefers-reduced-motion: reduce) { .auth-rule-dot, .auth-rule { transition: none; } .session-warning { animation: craft-fade 160ms ease both; } }
+
+/* One show/hide control: hide Edge's built-in password reveal button. */
+.preci-auth-input input::-ms-reveal, .preci-auth-input input::-ms-clear { display: none; }
+
+/* ---------- First-time "How a PreciRoute travels" guide ---------- */
+@media screen {
+  .route-guide { background: linear-gradient(180deg, #f6fbfa, #fff 60%); }
+  .route-guide-art { width: 4rem; height: 2.5rem; }
+  .route-guide-art-wrap { display: grid; place-items: center; width: 4.5rem; height: 3rem; border-radius: 0.625rem; background: var(--color-workspace-tint); }
+  .route-guide-ink { stroke-dasharray: 1; stroke-dashoffset: 0; }
+  /* Seen once per person, so a short choreographed entrance is earned: steps follow the reading order,
+     the ink in each illustration draws in just after its card lands. Non-uniform delays; never blocks clicks. */
+  @media (prefers-reduced-motion: no-preference) {
+    .route-guide-step { animation: craft-rise 360ms var(--ease-out) both; }
+    .route-guide-step:nth-child(2) { animation-delay: 70ms; }
+    .route-guide-step:nth-child(3) { animation-delay: 120ms; }
+    .route-guide-step .route-guide-ink { animation: glyph-draw 420ms var(--ease-out) both; animation-delay: 260ms; }
+    .route-guide-step:nth-child(2) .route-guide-ink { animation-delay: 330ms; }
+    .route-guide-step:nth-child(3) .route-guide-ink { animation-delay: 380ms; }
+  }
+}

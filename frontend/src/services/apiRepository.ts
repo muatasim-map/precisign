@@ -76,14 +76,19 @@ export class ApiPreciSignRepository implements IAccountAdministrationRepository,
     if (typeof result?.link !== 'string') throw new ApiError(502, 'Invalid reset link response.');
     return result.link;
   }
-  async registerUser(details: { name: string; email: string; department: string; password: string }): Promise<void> {
+  async registerUser(details: { name: string; email: string; department: string; password: string; role?: StaffRole }): Promise<void> {
     await this.call('/admin/accounts', 'POST', details);
+  }
+  async requestPasswordReset(email: string) {
+    await this.call('/auth/forgot-password', 'POST', { email });
   }
   async resetPassword(token: string, newPassword: string) {
     await this.call('/auth/reset-password', 'POST', { token, newPassword });
     this.actorId = undefined;
   }
-  async getCurrentUser() { const data: any = await this.call('/auth/me'); return this.profile(data?.user); }
+  /** Epoch ms when the current session ends, from the latest /auth/me (null when the server doesn't say). */
+  sessionExpiresAt: number | null = null;
+  async getCurrentUser() { const data: any = await this.call('/auth/me'); this.sessionExpiresAt = typeof data?.sessionExpiresAt === 'number' ? data.sessionExpiresAt : null; return this.profile(data?.user); }
   async logout() {
     try { await this.call('/auth/logout', 'POST'); }
     finally { this.actorId = undefined; }

@@ -39,6 +39,7 @@ import { FormGlyph } from '../decor/FormGlyphs';
 import { useMorphState } from '../common/MorphButton';
 import { Ticker } from '../common/Ticker';
 import { BottomSheet } from '../common/BottomSheet';
+import { FirstRouteGuide } from './FirstRouteGuide';
 import { RequestHoverPreview } from '../common/RequestHoverPreview';
 import { openWithTitleTransition } from '../../utils/viewTransition';
 
@@ -351,6 +352,7 @@ export const DashboardView: React.FC = () => {
         ))}
       </section>
 
+      {activeView === 'dashboard' && formShortcuts.length > 0 && <FirstRouteGuide userId={currentUser.id} hasSubmitted={myRequests.length > 0} onStart={() => setActiveView('forms-library')} />}
       {showProcessorQueue && <section className="workspace-panel space-y-2 p-4" aria-labelledby="assigned-processors-heading">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           <h2 id="assigned-processors-heading" className="font-bold">Approved requests to process

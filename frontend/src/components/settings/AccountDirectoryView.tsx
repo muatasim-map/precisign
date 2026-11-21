@@ -29,6 +29,7 @@ import {
   Check,
 } from 'lucide-react';
 import type { StaffRole, AccountDirectoryEntry, IAccountAdministrationRepository } from '../../services/repository';
+import { ApiError } from '../../services/apiTypes';
 import type { CompanyId } from '../../types';
 import { INITIAL_COMPANIES } from '../../data/seedData';
 import { companyForms } from '../library/FormsLibraryView';
@@ -58,7 +59,9 @@ export function AccountDirectoryView({ repository }: { repository: IAccountAdmin
   const refresh = useCallback(async () => {
     setLoadError(false);
     try {
-      setAccounts(await repository.listAccounts());
+      const entries = await repository.listAccounts();
+      setAccounts(entries);
+      return entries;
     } catch {
       setLoadError(true);
     }
@@ -70,11 +73,11 @@ export function AccountDirectoryView({ repository }: { repository: IAccountAdmin
   }, [refresh]);
 
   useEffect(() => {
-    if (!editor && editorTrigger.current) {
+    if (!editor && !showAddUserModal && editorTrigger.current) {
       editorTrigger.current.focus({ preventScroll: true });
       editorTrigger.current = null;
     }
-  }, [editor]);
+  }, [editor, showAddUserModal]);
 
   const term = query.trim().toLowerCase();
   const filtered = accounts?.filter(account =>
@@ -101,7 +104,10 @@ export function AccountDirectoryView({ repository }: { repository: IAccountAdmin
             <button
               type="button"
               className="workspace-primary preci-press inline-flex min-h-10 items-center gap-2 px-4 text-sm font-semibold"
-              onClick={() => setShowAddUserModal(true)}
+              onClick={event => {
+                editorTrigger.current = event.currentTarget;
+                setShowAddUserModal(true);
+              }}
             >
               <UserPlus aria-hidden="true" className="size-4" />
               Add new employee
@@ -374,7 +380,7 @@ export function AccountDirectoryView({ repository }: { repository: IAccountAdmin
       </div>
 
       {accounts && repository.listAccessRoles && repository.saveAccessRole && repository.assignAccessRoles &&
-        <AccessRolesPanel accounts={accounts} onSaved={refresh} repository={repository as Required<Pick<IAccountAdministrationRepository, 'listAccessRoles' | 'saveAccessRole' | 'assignAccessRoles'>>} />}
+        <AccessRolesPanel accounts={accounts} onSaved={async () => { await refresh(); }} repository={repository as Required<Pick<IAccountAdministrationRepository, 'listAccessRoles' | 'saveAccessRole' | 'assignAccessRoles'>>} />}
 
       {editor && (
         <AccountEditor
@@ -393,10 +399,14 @@ export function AccountDirectoryView({ repository }: { repository: IAccountAdmin
         <AddUserDialog
           repository={repository}
           onClose={() => setShowAddUserModal(false)}
-          onCreated={name => {
+          onCreated={async (name, email) => {
+            const entries = await refresh();
+            const account = entries?.find(entry => entry.email.toLowerCase() === email);
             setShowAddUserModal(false);
-            toast(`Employee account created for ${name}. Assign company and form access to activate.`);
-            void refresh();
+            if (account) setEditor({ account, mode: 'access' });
+            toast(account
+              ? `Employee account created for ${name}.`
+              : `Account created for ${name}. Refresh the directory to set access.`);
           }}
         />
       )}
@@ -732,12 +742,13 @@ function AddUserDialog({
 }: {
   repository: IAccountAdministrationRepository;
   onClose: () => void;
-  onCreated: (name: string) => void;
+  onCreated: (name: string, email: string) => Promise<void>;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [department, setDepartment] = useState('Operations');
+  const [department, setDepartment] = useState('');
+  const [role, setRole] = useState<StaffRole>('Employee');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -754,16 +765,21 @@ function AddUserDialog({
     setError('');
     try {
       if (repository.registerUser) {
+        const normalizedName = name.trim();
+        const normalizedEmail = email.trim().toLowerCase();
         await repository.registerUser({
-          name: name.trim(),
-          email: email.trim().toLowerCase(),
+          name: normalizedName,
+          email: normalizedEmail,
           department: department.trim(),
           password,
+          role,
         });
-        onCreated(name.trim());
+        await onCreated(normalizedName, normalizedEmail);
       }
-    } catch (err: any) {
-      setError(err?.message || 'Could not create account. Please check the details and try again.');
+    } catch (err) {
+      setError(err instanceof ApiError && err.status === 409
+        ? 'This email is already in the directory. Search for the existing account to manage its access.'
+        : err instanceof Error ? err.message : 'Could not create the account. Please try again.');
     } finally {
       setBusy(false);
     }
@@ -779,12 +795,12 @@ function AddUserDialog({
         if (!busy) onClose();
       }}
     >
-      <form className="flex min-h-0 flex-col" onSubmit={event => { event.preventDefault(); void submit(); }}>
+      <form aria-labelledby="add-user-title" method="post" className="flex min-h-0 flex-col" onSubmit={event => { event.preventDefault(); void submit(); }}>
         <header className="flex shrink-0 items-start justify-between gap-3 border-b border-workspace-line p-4 sm:p-5 bg-white">
           <div>
             <h2 id="add-user-title" className="text-xl font-bold text-slate-900">Add New Employee Account</h2>
             <p className="mt-1 text-sm text-workspace-muted">
-              Register a new synthetic employee. Company and form grants can be assigned immediately after creation.
+              Create a sign-in for an employee. Set their company and form access in the next step.
             </p>
           </div>
           <button
@@ -804,7 +820,10 @@ function AddUserDialog({
             <input
               className="workspace-control block min-h-10 w-full px-3 text-sm font-normal"
               type="text"
+              name="name"
+              autoComplete="off"
               required
+              pattern={/.*\S.*/.source}
               maxLength={150}
               placeholder="e.g. John Doe"
               value={name}
@@ -818,9 +837,12 @@ function AddUserDialog({
             <input
               className="workspace-control block min-h-10 w-full px-3 text-sm font-normal"
               type="email"
+              name="email"
+              autoComplete="off"
+              spellCheck={false}
               required
               maxLength={254}
-              placeholder="e.g. employee@test.com"
+              placeholder="e.g. employee@company.com"
               value={email}
               onChange={event => setEmail(event.target.value)}
               disabled={busy}
@@ -832,7 +854,9 @@ function AddUserDialog({
             <input
               className="workspace-control block min-h-10 w-full px-3 text-sm font-normal"
               type="text"
+              name="department"
               required
+              pattern={/.*\S.*/.source}
               maxLength={150}
               placeholder="e.g. Engineering / Maintenance"
               value={department}
@@ -842,10 +866,24 @@ function AddUserDialog({
           </label>
 
           <label className="preci-field">
+            Staff role
+            <select name="role" className="workspace-control block min-h-10 w-full px-3 text-sm font-normal" value={role}
+              onChange={event => setRole(event.target.value as StaffRole)} disabled={busy}>
+              <option value="Employee">Employee</option>
+              <option value="Admin">Admin</option>
+              <option value="IT">IT</option>
+              <option value="Finance">Finance</option>
+            </select>
+          </label>
+
+          <label className="preci-field">
             Temporary password (minimum 6 characters) *
             <input
               className="workspace-control block min-h-10 w-full px-3 text-sm font-normal font-mono"
               type="password"
+              name="password"
+              autoComplete="new-password"
+              aria-describedby="add-user-password-help"
               required
               minLength={6}
               maxLength={1024}
@@ -855,7 +893,7 @@ function AddUserDialog({
               disabled={busy}
             />
           </label>
-          <p className="text-xs text-workspace-muted">The employee must change this password when they first sign in.</p>
+          <p id="add-user-password-help" className="text-xs text-workspace-muted">The employee must change this password when they first sign in.</p>
 
           {error && <div role="alert" className="preci-error p-3 rounded-lg text-xs">{error}</div>}
         </div>

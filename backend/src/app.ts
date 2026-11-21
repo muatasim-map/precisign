@@ -1,4 +1,5 @@
 import express from 'express';
+import { randomBytes } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { readRoutes } from './reads';
 import { companyBrandingRoutes } from './companyBranding';
@@ -11,7 +12,7 @@ import { isDatabaseBusy } from './db';
 import { ownSignature, profileRoutes } from './profile';
 import type { AttachmentStorage } from './attachmentStorage';
 import { fields, RequestError, text } from './requestValidation';
-import { changePassword, changePasswordAsync, hashPassword, resetPassword, resetPasswordAsync, revokeSession, sessionUser, sessionUserAsync, signIn, signInAsync, sessionLifetime, tokenHash } from './auth';
+import { changePassword, changePasswordAsync, hashPassword, resetPassword, resetPasswordAsync, revokeSession, sessionUser, sessionUserAsync, signIn, signInAsync, sessionLifetime, tokenHash, sessionExpiry } from './auth';
 import type { AsyncDatabase, AsyncQueryConnection } from './asyncDatabase';
 import { ownSignatureAsync } from './profile';
 import { MockEmailTransport, ResendEmailTransport, OutboxProcessor, type IEmailTransport } from './email';
@@ -41,6 +42,9 @@ const requestErrorMessages: Partial<Record<number, string>> = {
 
 export async function createApp(db: DatabaseSync | AsyncDatabase, config: ServerConfig, attachmentStorage?: AttachmentStorage) {
   const origin = new URL(config.origin).origin;
+  const transport = config.emailTransport ?? ((process.env.NODE_ENV === 'test' || process.env.PRECISIGN_EMAIL_MODE === 'mock')
+    ? new MockEmailTransport()
+    : new ResendEmailTransport());
   if (config.secureCookies && !origin.startsWith('https://')) throw new Error('Secure mode requires an HTTPS origin.');
   const app = express();
   if (config.trustProxy !== undefined) {
@@ -91,8 +95,11 @@ export async function createApp(db: DatabaseSync | AsyncDatabase, config: Server
     for (const [key, entry] of attempts) if (entry.until <= time) attempts.delete(key);
     const key = `${req.path}:${req.ip || 'unknown'}`;
     const entry = attempts.get(key) ?? { count: 0, until: time + 15 * 60 * 1000 };
-    if ((!attempts.has(key) && attempts.size >= 10000) || entry.count >= (config.loginLimit ?? 10)) {
-      res.status(429).json({ error: 'Too many attempts. Try again later.' });
+    // Deliberately loose (owner decision): enough for a busy shared office IP, still stops scripted guessing.
+    if ((!attempts.has(key) && attempts.size >= 10000) || entry.count >= (config.loginLimit ?? 30)) {
+      const minutes = Math.max(1, Math.ceil((entry.until - time) / 60000));
+      res.setHeader('Retry-After', String(minutes * 60));
+      res.status(429).json({ error: `Too many attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.` });
       return;
     }
     entry.count++;
@@ -117,6 +124,41 @@ export async function createApp(db: DatabaseSync | AsyncDatabase, config: Server
       res.setHeader('Set-Cookie', cookie(session.token, sessionLifetime / 1000));
       res.json({ user: session.user });
     } catch (error) { next(error); }
+  });
+  app.post('/api/auth/forgot-password', limitAuthAttempts(false), express.json({ limit: '16kb' }), async (req, res) => {
+    const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    res.status(202).json({ message: 'If this email belongs to an active super admin, check your inbox for a reset link.' });
+    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return;
+    // Sandbox delivers to a substituted address and must never receive reset tokens.
+    if (transport instanceof ResendEmailTransport && transport.getMode() !== 'live') return;
+    const resetToken = randomBytes(32).toString('hex');
+    const hash = tokenHash(resetToken);
+    const issuedAt = now();
+    const insert = `INSERT INTO password_resets (user_id, token_hash, expires_at)
+      SELECT id, ?, ? FROM account_profiles
+      WHERE lower(email)=? AND is_super_admin=1 AND coalesce(is_disabled,0)=0
+      ON CONFLICT(user_id) DO UPDATE SET token_hash=excluded.token_hash, expires_at=excluded.expires_at
+      WHERE password_resets.expires_at <= ?`;
+    const args = [hash, issuedAt + 30 * 60 * 1000, email, issuedAt] as const;
+    try {
+      const changes = 'prepare' in db ? db.prepare(insert).run(...args).changes : (await db.execute(insert, [...args])).rowsAffected;
+      if (!changes) return;
+      const link = `${origin}/#reset=${resetToken}`;
+      const result = await transport.send({
+        to: email,
+        subject: 'Reset your PreciSign password',
+        html: `<p><a href="${link}">Reset your PreciSign password</a> within 30 minutes.</p><p>If you did not request this, you can ignore this email.</p>`,
+        text: `To reset your PreciSign password, open this link within 30 minutes: ${link}\n\nIf you did not request this, you can ignore this email.`,
+        idempotencyKey: `password-reset-${hash}`,
+      });
+      if (!result.accepted && !result.uncertain) {
+        const remove = 'DELETE FROM password_resets WHERE token_hash=?';
+        if ('prepare' in db) db.prepare(remove).run(hash);
+        else await db.execute(remove, [hash]);
+      }
+    } catch {
+      console.error('Password reset delivery could not be completed.');
+    }
   });
   app.post('/api/auth/reset-password', limitAuthAttempts(false), express.json({ limit: '16kb' }), async (req, res, next) => {
     try {
@@ -153,7 +195,7 @@ export async function createApp(db: DatabaseSync | AsyncDatabase, config: Server
   });
   // Only authenticated routes need the larger limit for signatures and attachments.
   app.use('/api', express.json({ limit: '18mb' }));
-  app.get('/api/auth/me', async (_req, res, next) => { try { const signature = 'prepare' in db ? ownSignature(db, res.locals.user.id) : await ownSignatureAsync(db, res.locals.user.id); res.json({ user: { ...res.locals.user, ...signature } }); } catch (error) { next(error); } });
+  app.get('/api/auth/me', async (_req, res, next) => { try { const signature = 'prepare' in db ? ownSignature(db, res.locals.user.id) : await ownSignatureAsync(db, res.locals.user.id); res.json({ user: { ...res.locals.user, ...signature }, sessionExpiresAt: await sessionExpiry(db, token(_req.get('Cookie'))) }); } catch (error) { next(error); } });
   app.post('/api/auth/change-password', async (req, res, next) => {
     try {
       fields(req.body, ['currentPassword', 'newPassword']);
@@ -178,9 +220,6 @@ export async function createApp(db: DatabaseSync | AsyncDatabase, config: Server
   app.use('/api', workflowRoutes(db));
   app.use('/api', draftRoutes(db));
   app.use('/api', companyBrandingRoutes(db));
-  const transport = config.emailTransport ?? ((process.env.NODE_ENV === 'test' || process.env.PRECISIGN_EMAIL_MODE === 'mock')
-    ? new MockEmailTransport()
-    : new ResendEmailTransport());
   const outboxProcessor = config.outboxProcessor ?? new OutboxProcessor(db, transport, { now });
   (app as any).outboxProcessor = outboxProcessor;
   if (config.autoStartWorker) {
@@ -201,7 +240,7 @@ export async function createApp(db: DatabaseSync | AsyncDatabase, config: Server
     }
     const message = requestErrorMessages[status];
     const processorError = error.status === 400 || error.status === 409;
-    const expose = processorError && ['PROCESSOR_SETUP', 'PROCESSOR_SELECTION', 'PROCESSOR_REASSIGNMENT'].includes(error.code ?? '');
+    const expose = (processorError && ['PROCESSOR_SETUP', 'PROCESSOR_SELECTION', 'PROCESSOR_REASSIGNMENT'].includes(error.code ?? '')) || (error.status === 400 && error.code === 'PASSWORD_POLICY');
     const payload: { error: string; code?: string } = { error: (expose ? error.message : message) ?? 'Could not complete request.' };
     if (typeof error.code === 'string') {
       payload.code = error.code;

@@ -90,7 +90,7 @@ export interface IAccountAdministrationRepository extends IPreciSignRepository {
   updateAccount(id: string, update: { email?: string; isDisabled?: boolean; role?: StaffRole }): Promise<void>;
   updateGrants(id: string, companyIds: CompanyId[], formsByCompany: Partial<Record<CompanyId, string[]>>, access?: AccountRouteAccessUpdate): Promise<void>;
   createResetLink(id: string): Promise<string>;
-  registerUser?(details: { name: string; email: string; department: string; password: string }): Promise<void>;
+  registerUser?(details: { name: string; email: string; department: string; password: string; role?: StaffRole }): Promise<void>;
 }
 
 const STORAGE_KEYS = {

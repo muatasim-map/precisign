@@ -1,3 +1,4 @@
+import { PASSWORD_MAX, PASSWORD_MIN, passwordProblem } from '../../shared/utils/passwordPolicy';
 import { randomBytes, randomUUID, scrypt as derive, timingSafeEqual, createHash } from 'node:crypto';
 import { promisify } from 'node:util';
 import type { DatabaseSync } from 'node:sqlite';
@@ -14,7 +15,7 @@ export const tokenHash = (token: string) => createHash('sha256').update(token).d
 export const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
 export async function hashPassword(password: string) {
-  if (typeof password !== 'string' || password.length < 6 || password.length > 1024) throw new Error('Password must contain 6–1024 characters.');
+  if (typeof password !== 'string' || password.length < PASSWORD_MIN || password.length > PASSWORD_MAX) throw new Error(`Password must contain ${PASSWORD_MIN}–${PASSWORD_MAX} characters.`);
   const salt = randomBytes(16).toString('hex');
   const key = await scrypt(password, salt, 64) as Buffer;
   return `scrypt$${salt}$${key.toString('hex')}`;
@@ -68,14 +69,16 @@ export async function registerAccount(
   const department = text(body.department, 150).trim();
   const email = normalizeEmail(text(body.email, 254));
   const password = text(body.password, 1024, false);
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 6) {
-    throw new RequestError(400, 'Invalid account details.');
-  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new RequestError(400, 'Invalid account details.');
+  const weak = passwordProblem(password, email);
+  if (weak) throw new RequestError(400, weak, 'PASSWORD_POLICY');
   const signature = body.signatureDataUrl;
   if (signature !== undefined) await bytes(signature, true);
   const hash = await hashPassword(password);
   const id = randomUUID();
-  const roleOverride = options?.role ?? 'Employee';
+  const role = options?.role ?? 'Employee';
+  const storedRole = role === 'Employee' ? 'Admin' : role;
+  const roleOverride = role === 'Employee' ? 'Employee' : null;
   const mustChange = options?.mustChangePassword ? 1 : 0;
   if ('prepare' in db) transaction(db, () => {
     if (options?.requireSuperAdmin) {
@@ -83,7 +86,7 @@ export async function registerAccount(
     }
     // The legacy company column is required by older records. Explicit grants control access.
     const result = db.prepare(`INSERT INTO users (id,email,name,role,department,company_id,password_hash)
-      VALUES (?, ?, ?, 'Admin', ?, 'PEW', ?) ON CONFLICT(email) DO NOTHING`).run(id, email, name, department, hash);
+      VALUES (?, ?, ?, ?, ?, 'PEW', ?) ON CONFLICT(email) DO NOTHING`).run(id, email, name, storedRole, department, hash);
     if (result.changes === 0) throw new RequestError(409, 'Account could not be created.');
     db.prepare("INSERT INTO account_access (user_id,role_override,must_change_password) VALUES (?,?,?)").run(id, roleOverride, mustChange);
     db.prepare("INSERT INTO company_access_roles SELECT ?, id, '[]' FROM companies").run(id);
@@ -96,13 +99,13 @@ export async function registerAccount(
       await (options.requireSuperAdmin as (tx: AsyncQueryConnection) => Promise<void>)(tx);
     }
     const result = await tx.execute(`INSERT INTO users (id,email,name,role,department,company_id,password_hash)
-      VALUES (?, ?, ?, 'Admin', ?, 'PEW', ?) ON CONFLICT(email) DO NOTHING`, [id, email, name, department, hash]);
+      VALUES (?, ?, ?, ?, ?, 'PEW', ?) ON CONFLICT(email) DO NOTHING`, [id, email, name, storedRole, department, hash]);
     if (result.rowsAffected === 0) throw new RequestError(409, 'Account could not be created.');
     await tx.execute("INSERT INTO account_access (user_id,role_override,must_change_password) VALUES (?,?,?)", [id, roleOverride, mustChange]);
     await tx.execute("INSERT INTO company_access_roles SELECT ?, id, '[]' FROM companies", [id]);
     if (typeof signature === 'string') await tx.execute('INSERT INTO user_signatures VALUES (?, ?, ?)', [id, signature, name]);
   });
-  return { id, email, name, department, role: roleOverride };
+  return { id, email, name, department, role };
 }
 export function createSession(db: DatabaseSync, userId: string, now = Date.now()) {
   const token = randomBytes(32).toString('hex');
@@ -168,9 +171,10 @@ export async function signInAsync(db: AsyncDatabase, email: string, password: st
 }
 
 export async function changePassword(db: DatabaseSync, userId: string, currentPassword: string, newPassword: string, requireCurrentUser: () => UserProfile) {
-  const row = db.prepare('SELECT password_hash FROM users WHERE id=?').get(userId);
+  const row = db.prepare('SELECT password_hash, email FROM users WHERE id=?').get(userId);
   if (!row || !(await verifyPassword(currentPassword, String(row.password_hash)))) throw new RequestError(403, 'Invalid credentials.');
-  if (newPassword.length < 6 || newPassword.length > 1024) throw new RequestError(400, 'Invalid password.');
+  const weak = passwordProblem(newPassword, String(row.email));
+  if (weak) throw new RequestError(400, weak, 'PASSWORD_POLICY');
   const hash = await hashPassword(newPassword);
   transaction(db, () => {
     requireCurrentUser();
@@ -183,9 +187,10 @@ export async function changePassword(db: DatabaseSync, userId: string, currentPa
 }
 
 export async function changePasswordAsync(db: AsyncDatabase, userId: string, currentPassword: string, newPassword: string, requireCurrentUser: (tx: AsyncQueryConnection) => Promise<UserProfile>) {
-  const row = (await db.execute('SELECT password_hash FROM users WHERE id=?', [userId])).rows[0];
+  const row = (await db.execute('SELECT password_hash, email FROM users WHERE id=?', [userId])).rows[0];
   if (!row || !(await verifyPassword(currentPassword, String(row.password_hash)))) throw new RequestError(403, 'Invalid credentials.');
-  if (newPassword.length < 6 || newPassword.length > 1024) throw new RequestError(400, 'Invalid password.');
+  const weak = passwordProblem(newPassword, String(row.email));
+  if (weak) throw new RequestError(400, weak, 'PASSWORD_POLICY');
   const hash = await hashPassword(newPassword);
   await db.transaction(async tx => {
     const user = await requireCurrentUser(tx);
@@ -201,11 +206,14 @@ export async function changePasswordAsync(db: AsyncDatabase, userId: string, cur
 export async function resetPassword(db: DatabaseSync, token: string, password: string, now: () => number) {
   const invalid = () => new RequestError(400, 'Reset link is invalid or expired.');
   if (!/^[a-f0-9]{64}$/.test(token)) throw invalid();
-  if (password.length < 6 || password.length > 1024) throw new RequestError(400, 'Invalid password.');
+  if (passwordProblem(password)) throw new RequestError(400, passwordProblem(password)!, 'PASSWORD_POLICY');
   const hash = tokenHash(token);
-  const eligible = () => db.prepare(`SELECT r.user_id FROM password_resets r JOIN account_profiles p ON p.id=r.user_id
+  const eligible = () => db.prepare(`SELECT r.user_id, p.email FROM password_resets r JOIN account_profiles p ON p.id=r.user_id
     WHERE r.token_hash=? AND r.expires_at>? AND COALESCE(p.is_disabled,0)=0`).get(hash, now());
-  if (!eligible()) throw invalid();
+  const target = eligible();
+  if (!target) throw invalid();
+  const weak = passwordProblem(password, String(target.email));
+  if (weak) throw new RequestError(400, weak, 'PASSWORD_POLICY');
   const passwordHash = await hashPassword(password);
   transaction(db, () => {
     const row = eligible();
@@ -220,11 +228,14 @@ export async function resetPassword(db: DatabaseSync, token: string, password: s
 export async function resetPasswordAsync(db: AsyncDatabase, token: string, password: string, now: () => number) {
   const invalid = () => new RequestError(400, 'Reset link is invalid or expired.');
   if (!/^[a-f0-9]{64}$/.test(token)) throw invalid();
-  if (password.length < 6 || password.length > 1024) throw new RequestError(400, 'Invalid password.');
+  if (passwordProblem(password)) throw new RequestError(400, passwordProblem(password)!, 'PASSWORD_POLICY');
   const hash = tokenHash(token);
-  const sql = `SELECT r.user_id FROM password_resets r JOIN account_profiles p ON p.id=r.user_id
+  const sql = `SELECT r.user_id, p.email FROM password_resets r JOIN account_profiles p ON p.id=r.user_id
     WHERE r.token_hash=? AND r.expires_at>? AND COALESCE(p.is_disabled,0)=0`;
-  if (!(await db.execute(sql, [hash, now()])).rows[0]) throw invalid();
+  const target = (await db.execute(sql, [hash, now()])).rows[0];
+  if (!target) throw invalid();
+  const weak = passwordProblem(password, String(target.email));
+  if (weak) throw new RequestError(400, weak, 'PASSWORD_POLICY');
   const passwordHash = await hashPassword(password);
   await db.transaction(async tx => {
     const row = (await tx.execute(sql, [hash, now()])).rows[0];
@@ -235,4 +246,12 @@ export async function resetPasswordAsync(db: AsyncDatabase, token: string, passw
     await tx.execute('UPDATE account_access SET must_change_password=0 WHERE user_id=?', [userId]);
     await tx.execute('DELETE FROM sessions WHERE user_id=?', [userId]);
   });
+}
+
+/** When the caller's session ends (epoch ms), so the browser can warn before it expires. Null if unknown. */
+export async function sessionExpiry(db: DatabaseSync | AsyncQueryConnection, token: string | undefined): Promise<number | null> {
+  if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
+  const sql = 'SELECT expires_at FROM sessions WHERE token_hash=?';
+  const row = 'prepare' in db ? db.prepare(sql).get(tokenHash(token)) : (await db.execute(sql, [tokenHash(token)])).rows[0];
+  return row ? Number(row.expires_at) : null;
 }
