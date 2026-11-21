@@ -29,3 +29,5 @@ jobs:
         run: node --import tsx --test shared/utils/approvalJourney.test.ts shared/utils/workflowEngine.test.ts frontend/src/services/repository.test.ts shared/utils/companyAccess.test.ts
       - run: npm run build
       - run: npm run test:startup
+      - name: Verify super admin recovery
+        run: node --import tsx --test --test-name-pattern="a signed-out super admin" backend/src/server.test.ts

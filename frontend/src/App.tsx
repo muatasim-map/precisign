@@ -265,6 +265,7 @@ const ApiApp: React.FC = () => {
     return token;
   });
   const [resetMessage, setResetMessage] = React.useState('');
+  const [resetRequestBusy, setResetRequestBusy] = React.useState(false);
   const [forgot, setForgot] = React.useState(false);
   const [showPassword, setShowPassword] = React.useState(false);
   const repository = React.useMemo(() => new ApiPreciSignRepository(), []);
@@ -383,7 +384,20 @@ const ApiApp: React.FC = () => {
         </div>
         {signup ? <p id="account-password-hint" className="mt-1.5 text-xs text-workspace-muted">Use at least 12 characters.</p>
         : <button className="preci-link mt-2" type="button" aria-expanded={forgot} onClick={() => setForgot(value => !value)}>Forgot password?</button>}
-        {!signup && forgot && <p className="mt-2 rounded-lg bg-workspace p-3 text-sm text-workspace-muted">Contact your super admin for a private password reset link.</p>}
+        {!signup && forgot && <div className="mt-2 space-y-2 rounded-lg bg-workspace p-3 text-sm text-workspace-muted">
+          <p>Super admins can request a reset by email. For other accounts, contact your super admin for a private reset link.</p>
+          <button type="button" className="preci-link" disabled={resetRequestBusy || !email.trim()} onClick={async () => {
+            setResetRequestBusy(true);
+            try {
+              await repository.requestPasswordReset(email);
+              setResetMessage('If this email belongs to an active super admin, check your inbox for a reset link.');
+            } catch {
+              setResetMessage('Could not request a reset link. Please try again shortly.');
+            } finally {
+              setResetRequestBusy(false);
+            }
+          }}>{resetRequestBusy ? 'Requesting…' : 'Send super admin reset link'}</button>
+        </div>}
       </div>
       {signup && <div className="rounded-lg border border-workspace-line bg-workspace/50 p-3">
         <button type="button" className="preci-link flex items-center gap-2" disabled={!name.trim()} onClick={() => setShowSignature(true)}>{signatureDataUrl ? <Check aria-hidden="true" className="size-4" /> : <PenLine aria-hidden="true" className="size-4" />}{signatureDataUrl ? 'Edit saved signature' : 'Add a signature (optional)'}</button>

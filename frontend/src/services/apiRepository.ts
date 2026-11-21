@@ -79,6 +79,9 @@ export class ApiPreciSignRepository implements IAccountAdministrationRepository,
   async registerUser(details: { name: string; email: string; department: string; password: string }): Promise<void> {
     await this.call('/admin/accounts', 'POST', details);
   }
+  async requestPasswordReset(email: string) {
+    await this.call('/auth/forgot-password', 'POST', { email });
+  }
   async resetPassword(token: string, newPassword: string) {
     await this.call('/auth/reset-password', 'POST', { token, newPassword });
     this.actorId = undefined;

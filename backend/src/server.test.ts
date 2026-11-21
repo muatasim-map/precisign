@@ -9,8 +9,55 @@ import { openDatabase, transaction, schemaVersion } from './db';
 import { hashPassword, verifyPassword, provisionUser, registerAccount, sessionLifetime, createSession, sessionUser } from './auth';
 import { createApp } from './app';
 
+import { MockEmailTransport } from './email';
+
 const account = { email: 'worker@example.test', name: 'Test Worker', department: 'Test', role: 'Admin' as const, companyId: 'PEW' as const };
 const password = 'Synthetic-test-password-123';
+
+test('a signed-out super admin can recover through their registered email', async () => {
+  const db = openDatabase(':memory:');
+  const userId = await provisionUser(db, account, password);
+  db.prepare('INSERT INTO account_access (user_id, is_super_admin) VALUES (?, 1)').run(userId);
+  const regularEmail = 'regular-admin@example.test';
+  const regularId = await provisionUser(db, { ...account, email: regularEmail }, password);
+  const origin = 'http://localhost:3000';
+  const transport = new MockEmailTransport();
+  const app = await createApp(db, { origin, secureCookies: false, emailTransport: transport });
+  const server = app.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}/api`;
+  const post = (path: string, body: unknown) => fetch(base + path, {
+    method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  try {
+    const missing = await post('/auth/forgot-password', { email: 'missing@example.test' });
+    const regular = await post('/auth/forgot-password', { email: regularEmail });
+    const existing = await post('/auth/forgot-password', { email: account.email });
+    assert.equal(missing.status, 202);
+    assert.equal(regular.status, 202);
+    assert.equal(existing.status, 202);
+    const response = await existing.json();
+    assert.deepEqual(await missing.json(), response);
+    assert.deepEqual(await regular.json(), response);
+    assert.equal(db.prepare('SELECT user_id FROM password_resets WHERE user_id=?').get(regularId), undefined);
+    assert.equal(transport.sent.length, 1);
+    assert.equal(transport.sent[0].to, account.email);
+    const token = transport.sent[0].text?.match(/#reset=([a-f0-9]{64})/)?.[1];
+    assert.ok(token);
+    await post('/auth/forgot-password', { email: account.email });
+    assert.equal(transport.sent.length, 1);
+    const newPassword = 'New-synthetic-password-123';
+    assert.equal((await post('/auth/reset-password', { token, newPassword })).status, 204);
+    assert.equal((await post('/auth/reset-password', { token, newPassword })).status, 400);
+    const login = await post('/auth/login', { email: account.email, password: newPassword });
+    assert.equal(login.status, 200);
+    assert.equal((await login.json()).user.isSuperAdmin, true);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    db.close();
+  }
+});
 
 test('temporary password sessions are restricted and password changes revoke all sessions', async () => {
   const db = openDatabase(':memory:');
