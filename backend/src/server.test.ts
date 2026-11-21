@@ -8,7 +8,6 @@ import { DatabaseSync } from 'node:sqlite';
 import { openDatabase, transaction, schemaVersion } from './db';
 import { hashPassword, verifyPassword, provisionUser, registerAccount, sessionLifetime, createSession, sessionUser } from './auth';
 import { createApp } from './app';
-import { MockEmailTransport } from './email';
 
 import { MockEmailTransport } from './email';
 

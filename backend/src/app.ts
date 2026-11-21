@@ -41,9 +41,6 @@ const requestErrorMessages: Partial<Record<number, string>> = {
 };
 
 export async function createApp(db: DatabaseSync | AsyncDatabase, config: ServerConfig, attachmentStorage?: AttachmentStorage) {
-  const transport = config.emailTransport ?? ((process.env.NODE_ENV === 'test' || process.env.PRECISIGN_EMAIL_MODE === 'mock')
-    ? new MockEmailTransport()
-    : new ResendEmailTransport());
   const origin = new URL(config.origin).origin;
   const transport = config.emailTransport ?? ((process.env.NODE_ENV === 'test' || process.env.PRECISIGN_EMAIL_MODE === 'mock')
     ? new MockEmailTransport()
