@@ -218,8 +218,8 @@ test('employee-creation authorization, initial grants, and effective access veri
   };
 
   try {
-    const publicSignup = await post('/auth/signup', newHireDetails);
-    assert.equal(publicSignup.status, 403, 'Public signup must be disabled');
+    const publicSignup = await post('/auth/signup', { ...newHireDetails, role: 'Admin' });
+    assert.equal(publicSignup.status, 400, 'Public signup cannot assign a staff role');
     assert.equal(db.prepare('SELECT id FROM users WHERE email=?').get(newHireDetails.email), undefined);
     // 1. Unauthenticated request to /admin/accounts fails
     const unauthRes = await post('/admin/accounts', newHireDetails);

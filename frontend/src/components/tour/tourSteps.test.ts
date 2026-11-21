@@ -7,7 +7,7 @@ const ids = (ctx: TourContext) => buildTourSteps(ctx).map(step => step.id);
 
 test('requester without signing or admin rights sees no restricted steps', () => {
   const list = ids(base);
-  assert.ok(list.includes('nav-forms'));
+  assert.ok(list.includes('new-request'));
   assert.ok(list.includes('nav-profile'));
   for (const hidden of ['nav-approvals', 'nav-signing-routes', 'nav-directory']) assert.ok(!list.includes(hidden), hidden);
 });
@@ -19,7 +19,7 @@ test('signing inbox and admin steps follow the visible links', () => {
 
 test('account awaiting company access skips request and form steps', () => {
   const list = ids({ ...base, hasCompanies: false, showApprovals: true });
-  for (const hidden of ['company', 'search', 'nav-forms', 'forms-library', 'nav-approvals', 'nav-my-requests', 'nav-archive']) {
+  for (const hidden of ['company', 'search', 'request-list', 'new-request', 'forms-library', 'nav-approvals', 'nav-my-requests', 'nav-archive']) {
     assert.ok(!list.includes(hidden), hidden);
   }
   assert.deepEqual([list[0], list.at(-1)], ['welcome', 'replay']);
@@ -35,6 +35,26 @@ test('page steps name a view and anchors use data-tour selectors', () => {
   const steps = buildTourSteps(base);
   assert.equal(steps.find(step => step.id === 'forms-library')?.view, 'forms-library');
   for (const step of steps) if (step.selector) assert.match(step.selector, /^\[data-tour="[a-z-]+"\]$/);
+});
+
+test('overview stops come first, on the dashboard, before the forms page', () => {
+  const steps = buildTourSteps(base);
+  assert.deepEqual(steps.slice(0, 4).map(step => step.id), ['welcome', 'request-list', 'new-request', 'forms-library']);
+  assert.equal(steps[1].view, 'dashboard');
+  assert.equal(steps[2].view, 'dashboard');
+  assert.equal(steps.at(-1)?.id, 'replay');
+});
+
+test('phone layout drops the hidden header search so the step count stays true', () => {
+  assert.ok(ids(base).includes('search'));
+  assert.ok(!ids({ ...base, compact: true }).includes('search'));
+  assert.equal(ids(base).length - ids({ ...base, compact: true }).length, 1);
+});
+
+test('request list copy mentions signing only when the inbox is shown', () => {
+  const body = (ctx: TourContext) => buildTourSteps(ctx).find(step => step.id === 'request-list')!.body;
+  assert.doesNotMatch(body(base), /signature/i);
+  assert.match(body({ ...base, showApprovals: true }), /waiting for your signature/);
 });
 
 test('seen flag is per mode and user, and survives storage failures', () => {

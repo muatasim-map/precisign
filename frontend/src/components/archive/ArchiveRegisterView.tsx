@@ -245,7 +245,29 @@ export const ArchiveRegisterView: React.FC = () => {
       </div>
 
       {/* High-density Operational Document Register Table */}
-      <div className="workspace-panel overflow-hidden">
+      {/* Phones: one card per record (same data and actions as the table). */}
+      <div className="workspace-panel overflow-hidden md:hidden">
+        {filteredRegister.length === 0
+          ? <p className="py-12 text-center text-sm text-slate-400">No documents matching the archive filter criteria.</p>
+          : <ul className="divide-y divide-[#E2E5E9]">
+            {filteredRegister.map(req => (
+              <li key={req.id} className="archive-card space-y-2 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <strong className="font-mono text-[#192B3C]" title={req.id}>{formatRequestId(req.id, req.displayId)}</strong>
+                  <span className="text-slate-500">{req.companyId} · v{req.documentVersion}</span>
+                </div>
+                <p dir="auto" className="text-[0.9375rem] font-semibold leading-snug text-workspace-ink [overflow-wrap:anywhere]">{req.formData.workDescription || req.formType}</p>
+                <p className="text-xs text-slate-500 [overflow-wrap:anywhere]">{req.formType} · {req.requesterName} · {new Date(req.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                <span className={`inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium ${req.status === 'Approved' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : req.status === 'Returned for Correction' ? 'border-amber-200 bg-amber-50 text-amber-800' : req.status === 'Rejected' ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-sky-200 bg-sky-50 text-sky-800'}`}>{req.status === 'Approved' ? 'Signing completed' : req.status}</span>
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  <button type="button" onClick={() => setSelectedHistoryRequest(req)} className="preci-link min-h-10 text-xs">Approval history</button>
+                  <button type="button" onClick={() => openReviewRequest(req.id)} className="workspace-primary preci-press inline-flex min-h-10 items-center gap-1 px-3 text-xs font-semibold">Open <ChevronRight aria-hidden="true" className="size-3" /></button>
+                </div>
+              </li>
+            ))}
+          </ul>}
+      </div>
+      <div className="workspace-panel overflow-hidden max-md:hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>

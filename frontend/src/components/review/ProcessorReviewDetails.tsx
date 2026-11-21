@@ -32,7 +32,7 @@ export function ProcessorReviewDetails({ request }: { request: RequestRecord }) 
         </li>;
       }))}
     </ul>
-    {assignment && <form className="mt-2 space-y-2" key={assignment.taskId + '/' + assignment.from} onSubmit={async event => {
+    {assignment && <form className="handoff-enter mt-2 space-y-2" key={assignment.taskId + '/' + assignment.from} onSubmit={async event => {
       event.preventDefault();
       if (pending) return;
       const data = new FormData(event.currentTarget);

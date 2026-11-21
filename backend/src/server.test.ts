@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { once } from 'node:events';
 import { DatabaseSync } from 'node:sqlite';
 import { openDatabase, transaction, schemaVersion } from './db';
-import { hashPassword, verifyPassword, provisionUser, registerAccount, sessionLifetime, createSession, sessionUser } from './auth';
+import { hashPassword, verifyPassword, provisionUser, sessionLifetime, createSession, sessionUser } from './auth';
 import { createApp } from './app';
 
 import { MockEmailTransport } from './email';
@@ -98,7 +98,7 @@ test('temporary password sessions are restricted and password changes revoke all
   }
 });
 
-test('public signup is disabled and provisioned accounts have private zero-grant access', async () => {
+test('self-registered employees can sign in with private zero-grant access', async () => {
   const db = openDatabase(':memory:');
   const legacyId = await provisionUser(db, account, password);
   const legacyCookie = `precisign_session=${createSession(db, legacyId)}`;
@@ -113,22 +113,26 @@ test('public signup is disabled and provisioned accounts have private zero-grant
   const mark = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVR4nGMQMgkTMgljgFAAEA4CcUNrdOsAAAAASUVORK5CYII=';
   const input = { name: 'New Worker', email: ' New@Example.test ', department: 'Test', password, signatureDataUrl: mark };
   try {
-    assert.equal((await post('/auth/signup', input)).status, 403);
-    assert.equal(db.prepare('SELECT id FROM users WHERE email=?').get('new@example.test'), undefined);
-    await registerAccount(db, input);
+    assert.equal((await post('/auth/signup', { ...input, role: 'Admin' })).status, 400);
+    assert.equal((await post('/auth/signup', { ...input, jobTitle: 'Purchasing Manager' })).status, 201);
+    assert.equal((await post('/auth/signup', input)).status, 409);
     const login = await post('/auth/login', { email: 'new@example.test', password });
     assert.equal(login.status, 200);
     const cookie = login.headers.get('set-cookie')!.split(';')[0];
     const get = (path: string, value = cookie) => fetch(base + path, { headers: { Cookie: value } });
     const bootstrap = await (await get('/bootstrap')).json();
     assert.equal(bootstrap.user.role, 'Employee');
+    assert.equal(bootstrap.user.jobTitle, 'Purchasing Manager');
+    assert.equal(bootstrap.user.isSuperAdmin, false);
     assert.deepEqual(bootstrap.user.companyGrants, []);
+    assert.deepEqual(bootstrap.user.formGrants, {});
     assert.deepEqual(bootstrap.companies, []);
     assert.deepEqual(bootstrap.users, []);
     assert.deepEqual(bootstrap.workflows, []);
     assert.equal(bootstrap.user.signatureDataUrl, mark);
     assert.deepEqual(await (await get('/requests')).json(), []);
     assert.equal((await get('/drafts/PEW/Admin%20Work%20Request')).status, 403);
+    assert.equal((await get('/admin/accounts')).status, 403);
     assert.equal((await post('/requests', { companyId: 'PEW', formType: 'IT Request' }, cookie)).status, 403);
     const legacy = await (await get('/bootstrap', legacyCookie)).json();
     assert.equal(legacy.users.some((user: { email: string }) => user.email === 'new@example.test'), false);

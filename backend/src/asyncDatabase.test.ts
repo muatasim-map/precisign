@@ -194,13 +194,15 @@ test('Express authentication uses asynchronous storage', async () => {
   const post = (path: string, body: unknown, cookie = '') => fetch(base + path, { method: 'POST', headers: { origin: 'http://localhost:3000', 'content-type': 'application/json', cookie }, body: JSON.stringify(body) });
   try {
     const input = { name: 'Synthetic Employee', email: 'employee@example.test', department: 'Test', password: 'Synthetic-password-123' };
-    assert.equal((await post('/auth/signup', input)).status, 403);
-    await registerAccount(db, input);
+    assert.equal((await post('/auth/signup', { ...input, jobTitle: 'Purchasing Manager' })).status, 201);
     const login = await post('/auth/login', { email: input.email, password: input.password });
     assert.equal(login.status, 200);
     const cookie = login.headers.get('set-cookie')!.split(';')[0];
     assert.equal((await fetch(base + '/auth/me', { headers: { cookie } })).status, 200);
     const user = await login.json();
+    assert.equal(user.user.role, 'Employee');
+    assert.equal(user.user.jobTitle, 'Purchasing Manager');
+    assert.deepEqual(user.user.companyGrants, []);
     const sample = { ...INITIAL_REQUESTS[0], id: 'synthetic-route', requesterId: user.user.id, companyId: 'PEW' };
     await db.execute('INSERT INTO requests VALUES (?,?,?,?,?,?)', ['synthetic-route', 'PEW', user.user.id, sample.status, 1, JSON.stringify(sample)]);
     assert.equal((await fetch(base + '/requests/synthetic-route', { headers: { cookie } })).status, 404);

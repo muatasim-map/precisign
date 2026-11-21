@@ -23,7 +23,7 @@ export function CompanyBrandingView({ repository }: { repository: IAccountAdmini
 
   return (
     <section className="settings-page space-y-5">
-      <PageHeader motif="brand" eyebrow="Administration" title="Company branding" subtitle="Manage the logo used on new requests for each legal company. PNG or JPEG, up to 2 MiB. Submitted requests keep their original branding permanently." />
+      <PageHeader motif="brand" eyebrow="Administration" title="Company branding" subtitle="Manage the logo used on new requests for each legal company. PNG or JPEG, up to 2 MiB. Submitted requests keep their original branding permanently. A company without a logo shows a blank logo area on its documents." />
       {loadError ? <div className="workspace-panel space-y-2 p-5">
         <p role="alert">Could not load company branding.</p>
         <ActionButton variant="secondary" size="sm" onClick={() => { setLoadError(false); setAttempt(value => value + 1); }}>Retry</ActionButton>
@@ -108,7 +108,6 @@ function CompanyLogoEditor({ company, repository }: { company: Company; reposito
         </div>
 
         {file && <p role="status" className="break-all text-xs font-semibold text-workspace-teal">Unsaved preview · {file.name}</p>}
-        {!hasLogo && <p className="text-xs text-workspace-muted">Documents show a blank logo area until an image is uploaded.</p>}
         <label className="logo-drop">
           <span className="sr-only">Choose a new logo image for {company.code}</span>
           <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="logo-drop-glyph size-6 shrink-0">

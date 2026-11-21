@@ -12,7 +12,7 @@ import { isDatabaseBusy } from './db';
 import { ownSignature, profileRoutes } from './profile';
 import type { AttachmentStorage } from './attachmentStorage';
 import { fields, RequestError, text } from './requestValidation';
-import { changePassword, changePasswordAsync, hashPassword, resetPassword, resetPasswordAsync, revokeSession, sessionUser, sessionUserAsync, signIn, signInAsync, sessionLifetime, tokenHash, sessionExpiry } from './auth';
+import { changePassword, changePasswordAsync, hashPassword, registerAccount, resetPassword, resetPasswordAsync, revokeSession, sessionUser, sessionUserAsync, signIn, signInAsync, sessionLifetime, tokenHash, sessionExpiry } from './auth';
 import type { AsyncDatabase, AsyncQueryConnection } from './asyncDatabase';
 import { ownSignatureAsync } from './profile';
 import { MockEmailTransport, ResendEmailTransport, OutboxProcessor, type IEmailTransport } from './email';
@@ -112,8 +112,11 @@ export async function createApp(db: DatabaseSync | AsyncDatabase, config: Server
     }
     next();
   };
-  app.post('/api/auth/signup', (_req, res) => {
-    res.status(403).json({ error: 'Account creation is managed by your administrator.' });
+  app.post('/api/auth/signup', limitAuthAttempts(false), express.json({ limit: '3mb' }), async (req, res, next) => {
+    try {
+      await registerAccount(db, req.body);
+      res.status(201).json({ status: 'created' });
+    } catch (error) { next(error); }
   });
   app.post('/api/auth/login', express.json({ limit: '16kb' }), limitAuthAttempts(true), async (req, res, next) => {
     try {

@@ -38,7 +38,9 @@ import { RouteCornerMotif, RouteHeaderMotif } from '../decor/RouteMotifs';
 import { FormGlyph } from '../decor/FormGlyphs';
 import { useMorphState } from '../common/MorphButton';
 import { Ticker } from '../common/Ticker';
+import { placePill } from '../common/useSlidingPill';
 import { BottomSheet } from '../common/BottomSheet';
+import { RevealOnMount } from '../common/RevealOnMount';
 import { FirstRouteGuide } from './FirstRouteGuide';
 import { RequestHoverPreview } from '../common/RequestHoverPreview';
 import { openWithTitleTransition } from '../../utils/viewTransition';
@@ -126,18 +128,24 @@ export const DashboardView: React.FC = () => {
   // Sliding pill behind the pressed tab: measured from the DOM, moved with transform only.
   const tabsRef = useRef<HTMLDivElement>(null);
   const pillRef = useRef<HTMLSpanElement>(null);
+  const pillOn = useRef<HTMLElement | null>(null);
   useLayoutEffect(() => {
-    const place = () => {
+    // Appears in place on first paint and follows resizes instantly; only a tab change slides.
+    const place = (fromResize: boolean) => {
       const pressed = tabsRef.current?.querySelector<HTMLElement>('.dash-tab[aria-pressed="true"]');
       const pill = pillRef.current;
       if (!pill) return;
-      if (!pressed) { pill.style.opacity = '0'; return; }
-      pill.style.opacity = '1';
-      pill.style.width = pressed.offsetWidth + 'px';
-      pill.style.transform = 'translateX(' + pressed.offsetLeft + 'px)';
+      if (!pressed) { pill.style.opacity = '0'; pillOn.current = null; return; }
+      const animate = !fromResize && pillOn.current !== null && pillOn.current !== pressed;
+      pillOn.current = pressed;
+      placePill(pill, () => {
+        pill.style.opacity = '1';
+        pill.style.width = pressed.offsetWidth + 'px';
+        pill.style.transform = 'translateX(' + pressed.offsetLeft + 'px)';
+      }, animate);
     };
-    place();
-    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(place);
+    place(false);
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => place(true));
     if (tabsRef.current) observer?.observe(tabsRef.current);
     return () => observer?.disconnect();
   });
@@ -316,6 +324,7 @@ export const DashboardView: React.FC = () => {
             </button>
           )}
           <ActionButton
+            data-tour="new-request"
             variant="primary"
             size="lg"
             icon={Plus}
@@ -405,7 +414,7 @@ export const DashboardView: React.FC = () => {
         {/* Table Controls Bar: Operational Filter Tabs + Search + Sort + Columns */}
         <div className="dash-toolbar">
           {/* Segmented Filter Tabs */}
-          <div role="group" aria-label="Request views" className="dash-tabs" ref={tabsRef}>
+          <div data-tour="request-list" role="group" aria-label="Request views" className="dash-tabs" ref={tabsRef}>
             <span aria-hidden="true" className="dash-tab-pill" ref={pillRef} />
             <button
               aria-pressed={internalTab === 'all'}
@@ -487,7 +496,7 @@ export const DashboardView: React.FC = () => {
               </button>
 
               {showColumnsMenu && (
-                <div className="absolute right-0 mt-1 w-52 bg-white border border-[#E2E5E9] rounded-md shadow-lg p-2 z-30 space-y-1 text-xs">
+                <div className="preci-popover origin-top-right absolute right-0 mt-1 w-52 bg-white border border-[#E2E5E9] rounded-md shadow-lg p-2 z-30 space-y-1 text-xs">
                   <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                     Show / Hide Columns
                   </div>
@@ -540,8 +549,8 @@ export const DashboardView: React.FC = () => {
                 aria-controls={`card-journey-${req.id}`} onClick={() => setExpandedRowId(expandedRowId === req.id ? null : req.id)}>Signing details</button>
               <button type="button" className="workspace-primary preci-press min-h-10 px-3 text-xs" onClick={event => openWithTitleTransition(event.currentTarget, () => openReviewRequest(req.id))}>{actionFor(req).label}</button>
             </div>
-            {expandedRowId === req.id && <div id={`card-journey-${req.id}`}><RequestJourneySummary request={req} userId={currentUser.id}
-              onHistory={() => setSelectedJourneyRequest(req)} /></div>}
+            {expandedRowId === req.id && <RevealOnMount id={`card-journey-${req.id}`}><RequestJourneySummary request={req} userId={currentUser.id}
+              onHistory={() => setSelectedJourneyRequest(req)} /></RevealOnMount>}
           </article>)}
         </div>
         {/* Operational Table */}
@@ -759,8 +768,8 @@ export const DashboardView: React.FC = () => {
                       {isExpanded && (
                         <tr className="bg-[#F9FAFB] border-b border-[#E2E5E9]">
                           <td colSpan={2 + Object.values(visibleColumns).filter(Boolean).length + (visibleColumns.id ? 2 : 0)} className="px-3 py-2 sm:pl-10">
-                            <RequestJourneySummary request={req} userId={currentUser.id}
-                              onHistory={() => setSelectedJourneyRequest(req)} />
+                            <RevealOnMount><RequestJourneySummary request={req} userId={currentUser.id}
+                              onHistory={() => setSelectedJourneyRequest(req)} /></RevealOnMount>
                           </td>
                         </tr>
                       )}

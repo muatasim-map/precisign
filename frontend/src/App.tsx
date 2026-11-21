@@ -251,6 +251,7 @@ const ApiApp: React.FC = () => {
   const [signup, setSignup] = React.useState(false);
   const [name, setName] = React.useState('');
   const [department, setDepartment] = React.useState('');
+  const [suggestedJobTitle, setSuggestedJobTitle] = React.useState('');
   const [signatureDataUrl, setSignatureDataUrl] = React.useState<string>();
   const [showSignature, setShowSignature] = React.useState(false);
   const [signupBusy, setSignupBusy] = React.useState(false);
@@ -319,6 +320,15 @@ const ApiApp: React.FC = () => {
       <button type="button" className="preci-link" onClick={() => setResetToken('')}>Back to sign in</button>
     </form>
   </AuthCard>;
+  if (state.status === 'authenticated' && !state.bootstrap.user.isSuperAdmin &&
+    state.bootstrap.user.companyGrants?.length === 0 && state.bootstrap.companies.length === 0) {
+    return <AuthCard eyebrow="Employee access" title="Awaiting access" intro="Your account is ready. Your super admin will assign the companies and forms you can use.">
+      <div className="flex flex-wrap items-center gap-4">
+        <MorphButton type="button" variant="primary" state="idle" onClick={() => void session.restore()}>Check access</MorphButton>
+        <button type="button" className="preci-link" onClick={() => void session.logout()}>Sign out</button>
+      </div>
+    </AuthCard>;
+  }
   if (state.status === 'authenticated') return <AppProvider apiData={state} apiRepository={repository}>
     {connectionError && <p role="alert" className="px-6 py-2 text-xs text-rose-700">{connectionError}</p>}
     {minutesLeft !== null && !expired && <div role="status" className="session-warning no-print">
@@ -383,14 +393,16 @@ const ApiApp: React.FC = () => {
     setSignupBusy(true);
     setSignupError('');
     try {
-      await repository.signup({ name, email, department, password, signatureDataUrl });
+      await repository.signup({ name, email, department, jobTitle: suggestedJobTitle.trim() || undefined, password, signatureDataUrl });
       setSignup(false);
       setPassword('');
       await session.login(email, password);
     } catch (error) {
       setSignupError(error instanceof ApiError && error.status === 409
         ? 'Could not create this account. If you already registered, try signing in.'
-        : 'Could not create the account. Check your details and try again.');
+        : error instanceof ApiError && (error.status === 429 || error.code === 'PASSWORD_POLICY')
+          ? error.message
+          : 'Could not create the account. Check your details and try again.');
     } finally { setSignupBusy(false); }
   }}>
     <div>
@@ -406,6 +418,10 @@ const ApiApp: React.FC = () => {
         <label className="preci-field">Name<span className="preci-auth-input"><UserRound aria-hidden="true" /><input autoComplete="name" required maxLength={150} value={name} onChange={e => { setName(e.target.value); setSignatureDataUrl(undefined); }} /></span></label>
         <label className="preci-field">Department<span className="preci-auth-input"><Building2 aria-hidden="true" /><input required maxLength={150} value={department} onChange={e => setDepartment(e.target.value)} /></span></label>
       </div>}
+      {signup && <label className="preci-field">Suggested job title (optional)
+        <span className="preci-auth-input"><input name="jobTitle" autoComplete="organization-title" maxLength={150}
+          value={suggestedJobTitle} onChange={event => setSuggestedJobTitle(event.target.value)} /></span>
+      </label>}
       <label className="preci-field">Email<span className="preci-auth-input"><Mail aria-hidden="true" /><input type="email" autoComplete={signup ? 'email' : 'username'} required value={email} onChange={e => setEmail(e.target.value)} /></span></label>
       <div>
         <PasswordField id="account-password" label="Password" autoComplete={signup ? 'new-password' : 'current-password'} value={password} onChange={setPassword} email={signup ? email : undefined} showRules={signup} />
@@ -437,7 +453,14 @@ const ApiApp: React.FC = () => {
       </MorphButton>
     </fieldset>
     <p className="border-t border-workspace-line pt-4 text-center text-sm text-workspace-muted">
-      Need an account? Contact your administrator.
+      {signup ? 'Already have an account?' : 'Need an account?'}{' '}
+      <button type="button" className="preci-link" disabled={signupBusy || loginBusy} onClick={() => {
+        setSignup(value => !value);
+        setSignupError('');
+        setResetMessage('');
+        setForgot(false);
+        setPassword('');
+      }}>{signup ? 'Sign in' : 'Create an account'}</button>
     </p>
   </form>
   {showSignature && <SignatureModal isOpen user={signatureUser} title="Set up your signature" confirmLabel="Use this signature" onClose={() => setShowSignature(false)} onConfirm={async value => {

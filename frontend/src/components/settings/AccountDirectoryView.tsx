@@ -38,6 +38,10 @@ import { AccessRolesPanel } from './AccessRolesPanel';
 type Editor = { account: AccountDirectoryEntry; mode: 'access' | 'email' | 'status' | 'reset' | 'role' };
 type FormGrants = Partial<Record<CompanyId, string[]>>;
 
+function isAwaitingAccess(account: AccountDirectoryEntry) {
+  return !account.isDisabled && !account.isSuperAdmin && !account.isGroupAdmin && account.companyGrants?.length === 0;
+}
+
 const editorTitles = {
   access: 'Access Rights',
   email: 'Change sign-in email',
@@ -81,12 +85,14 @@ export function AccountDirectoryView({ repository }: { repository: IAccountAdmin
 
   const term = query.trim().toLowerCase();
   const filtered = accounts?.filter(account =>
-    (status === 'all' || account.isDisabled === (status === 'disabled')) &&
+    (status === 'all' || (status === 'awaiting'
+      ? isAwaitingAccess(account)
+      : status === 'disabled' ? account.isDisabled : !account.isDisabled && !isAwaitingAccess(account))) &&
     [account.name, account.email, account.department, account.role].some(value =>
       value.toLowerCase().includes(term)
     )
   );
-  const activeCount = accounts?.filter(account => !account.isDisabled).length ?? 0;
+  const enabledCount = accounts?.filter(account => !account.isDisabled).length ?? 0;
 
   function openEditor(account: AccountDirectoryEntry, mode: Editor['mode'], trigger: HTMLButtonElement) {
     const menu = trigger.closest('details');
@@ -116,8 +122,8 @@ export function AccountDirectoryView({ repository }: { repository: IAccountAdmin
         {accounts && (
           <dl className="preci-directory-stats">
             <div><dt>Total accounts</dt><dd>{accounts.length}</dd></div>
-            <div><dt>Active</dt><dd className="text-teal-700">{activeCount}</dd></div>
-            <div><dt>Disabled</dt><dd className="text-amber-800">{accounts.length - activeCount}</dd></div>
+            <div><dt>Enabled</dt><dd className="text-teal-700">{enabledCount}</dd></div>
+            <div><dt>Disabled</dt><dd className="text-amber-800">{accounts.length - enabledCount}</dd></div>
           </dl>
         )}
       </div>
@@ -156,6 +162,7 @@ export function AccountDirectoryView({ repository }: { repository: IAccountAdmin
             >
               <option value="all">All statuses</option>
               <option value="active">Active</option>
+              <option value="awaiting">Awaiting access</option>
               <option value="disabled">Disabled</option>
             </select>
           </label>
@@ -214,26 +221,25 @@ export function AccountDirectoryView({ repository }: { repository: IAccountAdmin
                           <Shield aria-hidden="true" /> Super admin
                         </span>
                       )}
-                      <span className={`preci-tag ${account.isDisabled ? 'preci-tag-disabled' : 'preci-tag-active'}`}>
+                      {(account.isDisabled || isAwaitingAccess(account)) && <span className={`preci-tag ${account.isDisabled ? 'preci-tag-disabled' : 'preci-tag-active'}`}>
                         <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
-                        {account.isDisabled ? 'Disabled' : 'Active'}
-                      </span>
-                    </div>
-                    <p className="mt-1 [overflow-wrap:anywhere] text-sm text-workspace-muted">{account.email}</p>
-                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-workspace-muted">
-                      {account.department && <span>{account.department}</span>}
-                      {account.department && <span aria-hidden="true">·</span>}
-                      <span className="font-medium text-slate-700">{account.jobTitle || account.role}</span>
-                    </div>
-
-                    {/* Role & Administration Badges */}
-                    <div className="mt-2 flex flex-wrap gap-1.5">
+                        {account.isDisabled ? 'Disabled' : 'Awaiting access'}
+                      </span>}
                       {isWorkflowAdmin && (
                         <span className="inline-flex items-center gap-1 rounded bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 border border-indigo-150" title="Can configure signing routes and manage intermediate signer replacements">
                           <SlidersHorizontal className="size-3" /> Route Admin
                         </span>
                       )}
                     </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2 text-sm">
+                      <span className="font-medium text-slate-800">{isAwaitingAccess(account) && account.jobTitle
+                        ? `Suggested title: ${account.jobTitle}`
+                        : account.jobTitle || account.role}</span>
+                      {account.department && <span aria-hidden="true" className="text-workspace-muted">·</span>}
+                      {account.department && <span className="text-workspace-muted">{account.department}</span>}
+                    </div>
+                    <p className="mt-0.5 text-xs [overflow-wrap:anywhere] text-workspace-muted">{account.email}</p>
+
                   </div>
                 </div>
 

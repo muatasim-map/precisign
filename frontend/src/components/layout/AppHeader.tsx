@@ -150,7 +150,7 @@ export const AppHeader: React.FC<{ onSignOut?: () => void; sidebarHidden: boolea
           </button>
 
           {companyDropdownOpen && (
-            <div className="workspace-panel absolute top-full left-0 z-50 mt-2 w-84 max-w-[calc(100vw-4rem)] p-2">
+            <div className="preci-popover origin-top-left workspace-panel absolute top-full left-0 z-50 mt-2 w-84 max-w-[calc(100vw-4rem)] p-2">
               <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
                 Parent Organization:
               </div>
@@ -235,7 +235,7 @@ export const AppHeader: React.FC<{ onSignOut?: () => void; sidebarHidden: boolea
 
         {/* Search Results Popover */}
         {globalSearch.trim() && (
-          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-[#E2E5E9] rounded-lg shadow-xl p-2 z-50 max-h-72 overflow-y-auto">
+          <div className="preci-popover origin-top absolute top-full left-0 right-0 mt-1 bg-white border border-[#E2E5E9] rounded-lg shadow-xl p-2 z-50 max-h-72 overflow-y-auto">
             <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Matching Requests ({searchResults.length}):
             </div>
@@ -335,7 +335,7 @@ export const AppHeader: React.FC<{ onSignOut?: () => void; sidebarHidden: boolea
           </button>
 
           {notificationsOpen && (
-            <div className="absolute top-full right-0 mt-1 w-80 max-w-[calc(100vw-5.25rem)] bg-white border border-[#E2E5E9] rounded-lg shadow-xl p-3 z-50">
+            <div className="preci-popover origin-top-right absolute top-full right-0 mt-1 w-80 max-w-[calc(100vw-5.25rem)] bg-white border border-[#E2E5E9] rounded-lg shadow-xl p-3 z-50">
               <div className="flex items-center justify-between pb-2 border-b border-[#E2E5E9]">
                 <span className="text-xs font-bold text-[#192B3C]">Actionable Items</span>
                 <span className="text-[10px] font-semibold text-[#365C78] bg-[#EBF2F7] px-1.5 py-0.5 rounded">

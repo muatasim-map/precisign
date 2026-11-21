@@ -17,6 +17,9 @@ export function AccessRightsMatrix({ grants, forms, rights, permissions, workflo
   const [selected, select] = useState<CompanyId>(grants[0] ?? 'PEW');
   const [confirmClear, setConfirmClear] = useState<CompanyId>();
   const companySwitch = useSlidingPill();
+  // Forms with settings when the editor opens stay open for the whole edit, so a row never collapses under the cursor.
+  const [openForms, setOpenForms] = useState<Set<string>>(() => new Set(formsInDisplayOrder.filter(form => companies.some(id => grants.includes(id) && (
+    (forms[id]?.includes(form) ?? false) || (rights[id]?.signerSteps?.[form]?.length ?? 0) > 0 || (rights[id]?.processorTasks?.[form]?.length ?? 0) > 0)))));
   const columnClass = (id: CompanyId) => id === selected ? '' : 'hidden md:table-cell';
   const toggle = (items: string[], id: string, enabled: boolean) => enabled ? [...items, id] : items.filter(item => item !== id);
   // Plain summary of overlapping responsibilities in one company, from the same draft values the cells edit.
@@ -81,7 +84,16 @@ export function AccessRightsMatrix({ grants, forms, rights, permissions, workflo
               </div>
               : <button type="button" className="workspace-control preci-press min-h-9 px-2.5 text-start text-xs font-semibold text-slate-700" onClick={() => setConfirmClear(id)}>Remove from all signer pickers…</button>)}
           </td>)}</tr>
-          {formsInDisplayOrder.map(form => <tr key={form}>
+          {formsInDisplayOrder.map(form => {
+            // A form with nothing set for this person (in any company they can access) starts collapsed.
+            if (!openForms.has(form)) return <tr key={form}>
+              <th scope="row" className="break-words p-3 align-top"><span className="access-sticky-row">{form}</span></th>
+              <td colSpan={companies.length} className="p-3 text-workspace-muted">
+                <span className="me-2">Nothing set for this person.</span>
+                <button type="button" aria-expanded="false" className="preci-link min-h-9 text-xs" onClick={() => setOpenForms(current => new Set(current).add(form))}>Show settings</button>
+              </td>
+            </tr>;
+            return <tr key={form}>
             <th scope="row" className="break-words p-3 align-top"><span className="access-sticky-row">{form}</span></th>
             {companies.map(id => {
               const grant = rights[id] ?? {};
@@ -118,7 +130,8 @@ export function AccessRightsMatrix({ grants, forms, rights, permissions, workflo
                 </> : <span className="text-workspace-muted">—</span>}
               </td>;
             })}
-          </tr>)}
+          </tr>;
+          })}
         </tbody>
       </table>
     </div>

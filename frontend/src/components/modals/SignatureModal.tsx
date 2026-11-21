@@ -1,3 +1,4 @@
+import { useSlidingPill } from '../common/useSlidingPill';
 import { MorphButton } from '../common/MorphButton';
 import { WorkspaceDialog } from '../common/WorkspaceDialog';
 import React, { useRef, useState, useEffect } from 'react';
@@ -44,6 +45,7 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
 }) => {
   const [tab, setTab] = useState<'style' | 'draw' | 'upload' | 'saved'>('style');
   const [styledName, setStyledName] = useState(user.name);
+  const tabPill = useSlidingPill<HTMLFieldSetElement>({ underline: true });
   const [saving, setSaving] = useState(false);
   const [note, setNote] = useState('');
   const savingRef = useRef(false);
@@ -209,15 +211,16 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
 
         {reviewContext && <div className="px-4 py-3 sm:px-6 text-xs border-b border-workspace-line"><p className="font-semibold">{user.name} · {reviewContext.responsibility}</p><p className="mt-1 text-workspace-muted">Document version {reviewContext.version}. Your signature is recorded only after the save succeeds.</p></div>}
         {/* Tab selection */}
-        {!onSignatureProfile && <fieldset disabled={saving} className="flex border-b border-[#E2E5E9] px-4 sm:px-6 pt-2.5 sm:pt-3 bg-white overflow-x-auto">
-          {reviewContext && user.signatureDataUrl && <button type="button" aria-pressed={tab === 'saved'} onClick={() => setTab('saved')} className={`min-h-10 border-b-2 px-3 text-xs font-semibold ${tab === 'saved' ? 'border-workspace-teal text-workspace-teal' : 'border-transparent text-workspace-muted'}`}>Saved signature</button>}
+        {!onSignatureProfile && <fieldset ref={tabPill.group} disabled={saving} className="seg-group flex border-b border-[#E2E5E9] px-4 sm:px-6 pt-2.5 sm:pt-3 bg-white overflow-x-auto">
+          <span aria-hidden="true" ref={tabPill.pill} className="seg-pill seg-pill-underline" />
+          {reviewContext && user.signatureDataUrl && <button type="button" aria-pressed={tab === 'saved'} onClick={() => setTab('saved')} className={`min-h-10 border-b-2 px-3 text-xs font-semibold ${tab === 'saved' ? 'border-transparent text-workspace-teal' : 'border-transparent text-workspace-muted'}`}>Saved signature</button>}
           <button
             type="button"
             aria-pressed={tab === 'style'}
             onClick={() => setTab('style')}
             className={`flex items-center gap-2 pb-2.5 px-3 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap shrink-0 ${
               tab === 'style'
-                ? 'border-[#365C78] text-[#192B3C]'
+                ? 'border-transparent text-[#192B3C]'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
@@ -230,7 +233,7 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
             onClick={() => setTab('draw')}
             className={`flex items-center gap-2 pb-2.5 px-3 text-xs font-semibold border-b-2 transition-colors ${
               tab === 'draw'
-                ? 'border-[#365C78] text-[#192B3C]'
+                ? 'border-transparent text-[#192B3C]'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
@@ -243,7 +246,7 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
             onClick={() => setTab('upload')}
             className={`flex items-center gap-2 pb-2.5 px-3 text-xs font-semibold border-b-2 transition-colors ${
               tab === 'upload'
-                ? 'border-[#365C78] text-[#192B3C]'
+                ? 'border-transparent text-[#192B3C]'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >

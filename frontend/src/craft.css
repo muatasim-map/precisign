@@ -328,3 +328,13 @@
     .route-guide-step:nth-child(3) .route-guide-ink { animation-delay: 380ms; }
   }
 }
+
+/* ---------- Round 9: alerts register with a one-time nudge ---------- */
+@media screen and (prefers-reduced-motion: no-preference) {
+  .alert-nudge { animation: alert-nudge 220ms var(--ease-out) 1; }
+}
+@keyframes alert-nudge { 0%, 100% { translate: 0; } 25% { translate: -6px; } 55% { translate: 5px; } 80% { translate: -3px; } }
+@media screen {
+  .seg-pill-underline { border-radius: 2px; background: #365c78; box-shadow: none; }
+  .seg-group > .seg-pill-underline ~ button { background: transparent; }
+}

@@ -1,3 +1,4 @@
+import { useSlidingPill } from '../common/useSlidingPill';
 import { MorphButton, useMorphState } from '../common/MorphButton';
 import { PageHeader } from '../common/PageHeader';
 import React, { useEffect, useState, useRef } from 'react';
@@ -22,6 +23,7 @@ export const UserProfileView: React.FC = () => {
   }, [returnAfterSave, signatureReturn, openReviewRequest]);
   const [uploaded, setUploaded] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const methodPill = useSlidingPill();
   const [saveFailed, setSaveFailed] = useState(false);
   const [revealSignature, setRevealSignature] = useState(false);
   const [reading, setReading] = useState(false);
@@ -190,7 +192,8 @@ export const UserProfileView: React.FC = () => {
           </header>
 
           <div className="space-y-5 p-5 sm:p-6">
-            <div role="group" aria-label="Signature method" className="grid grid-cols-2 gap-1 rounded-xl border border-workspace-line bg-slate-50 p-1">
+            <div ref={methodPill.group} role="group" aria-label="Signature method" className="seg-group grid grid-cols-2 gap-1 rounded-xl border border-workspace-line bg-slate-50 p-1">
+              <span aria-hidden="true" ref={methodPill.pill} className="seg-pill seg-pill-white" />
               {([
                 { value: 'upload', label: 'Upload signature', Icon: Upload },
                 { value: 'draw', label: 'Draw signature', Icon: PenTool },
@@ -211,7 +214,7 @@ export const UserProfileView: React.FC = () => {
                     if (source || drawPreview) setDiscard(() => switchMethod);
                     else switchMethod();
                   }}
-                  className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-transparent px-2 text-sm font-semibold text-workspace-muted hover:bg-white/70 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-teal-700 aria-pressed:border-workspace-line aria-pressed:bg-white aria-pressed:text-workspace-ink aria-pressed:shadow-xs"
+                  className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-transparent px-2 text-sm font-semibold text-workspace-muted hover:bg-white/70 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-teal-700 aria-pressed:text-workspace-ink"
                 >
                   <Icon aria-hidden="true" className="size-4 shrink-0" />
                   {label}
@@ -267,7 +270,7 @@ export const UserProfileView: React.FC = () => {
           </div>
 
           <footer className="flex flex-wrap items-center justify-end gap-3 border-t border-workspace-line bg-slate-50/60 px-5 py-4 sm:px-6">
-            <p role="status" className="flex-1 text-sm text-workspace-muted">{feedback}</p>
+            <p role="status" className="flex-1 text-sm text-workspace-muted">{feedback || (!(activeTab === 'draw' ? drawPreview : uploaded) ? (activeTab === 'draw' ? 'Draw your signature above, then save it.' : 'Choose a signature image first, then save it.') : '')}</p>
             <MorphButton variant="primary" size="md" icon={Check} state={saveState} disabled={isLoadingEmployee || !(activeTab === 'draw' ? drawPreview : uploaded)} busyLabel={reading ? 'Reading file…' : 'Saving…'} doneLabel="Saved" errorLabel="Try again" onClick={() => void handleSaveSignature((activeTab === 'draw' ? drawPreview : uploaded) || undefined)}>
               Save signature
             </MorphButton>

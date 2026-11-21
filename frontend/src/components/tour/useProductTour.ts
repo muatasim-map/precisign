@@ -15,6 +15,8 @@ export function requestProductTour() {
 
 const mobileQuery = '(max-width: 1023.98px)';
 const isMobile = () => window.matchMedia?.(mobileQuery).matches ?? false;
+/** Matches the header search's `md` breakpoint: below it the search box is hidden. */
+const isCompact = () => window.matchMedia?.('(max-width: 767.98px)').matches ?? false;
 const wait = (ms: number) => new Promise(resolve => window.setTimeout(resolve, ms));
 
 function visible(selector: string): Element | null {
@@ -64,7 +66,8 @@ export function useProductTour({ awaitingAccess, canOpenDirectory, revealSidebar
 
   const start = useCallback(() => {
     stop();
-    const steps = buildTourSteps({ mode, showApprovals: showSigningInbox, showRouteSettings, canOpenDirectory, hasCompanies });
+    const steps = buildTourSteps({ mode, showApprovals: showSigningInbox, showRouteSettings, canOpenDirectory, hasCompanies, compact: isCompact() });
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
     const userId = currentUser.id;
     let ended = false;
     let started = false;
@@ -84,8 +87,15 @@ export function useProductTour({ awaitingAccess, canOpenDirectory, revealSidebar
       if (!step.selector) return true;
       // Wait for a page or drawer that is still rendering; an anchor that is simply hidden (e.g. search on phones) is skipped quickly.
       const found = await waitForVisible(step.selector, changed ? 2500 : 250);
-      if (found && changed && mobile) await wait(320); // let the drawer finish sliding before measuring
-      return Boolean(found);
+      if (!found) return false;
+      if (changed && mobile) await wait(320); // let the drawer finish sliding before measuring
+      // Driver.js measures in place, so bring a below-the-fold anchor (e.g. the request tabs) into view first.
+      const box = found.getBoundingClientRect();
+      if (step.area === 'page' && (box.top < 72 || box.bottom > window.innerHeight - 24)) {
+        found.scrollIntoView({ block: 'center', behavior: 'instant' });
+        await wait(60);
+      }
+      return true;
     }
 
     async function show(from: number, direction: 1 | -1) {
@@ -115,10 +125,14 @@ export function useProductTour({ awaitingAccess, canOpenDirectory, revealSidebar
       stagePadding: 6,
       stageRadius: 10,
       allowClose: true,
-      showProgress: false,
+      animate: !reduceMotion,
+      smoothScroll: !reduceMotion,
+      showProgress: steps.length > 2,
+      progressText: '{{current}} of {{total}}',
       nextBtnText: 'Next',
       prevBtnText: 'Back',
-      doneBtnText: 'Done',
+      doneBtnText: 'Finish',
+      closeBtnLabel: 'Close tour',
       steps: steps.map(step => ({
         element: step.selector,
         popover: { title: step.title, description: step.body },
@@ -145,16 +159,17 @@ export function useProductTour({ awaitingAccess, canOpenDirectory, revealSidebar
     return () => window.removeEventListener(startEvent, onStart);
   }, []);
 
-  // First visit per user and mode, from the overview only.
+  // First time this user reaches the overview in this mode, whether at sign-in or later
+  // (a deep link to a request or form doesn't interrupt the task they came for).
+  const onOverview = activeView === 'dashboard';
   useEffect(() => {
-    if (awaitingAccess || hasSeenTour(mode, currentUser.id)) return;
+    if (!onOverview || awaitingAccess || hasSeenTour(mode, currentUser.id)) return;
     const timer = window.setTimeout(() => {
-      const path = window.location.pathname;
       const shellLive = !document.querySelector('.preci-shell')?.closest('[inert],[hidden]');
-      if ((path === '/' || path === '/dashboard') && shellLive && !hasSeenTour(mode, currentUser.id)) startRef.current();
+      if (shellLive && !tour.current && !hasSeenTour(mode, currentUser.id)) startRef.current();
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [awaitingAccess, mode, currentUser.id]);
+  }, [onOverview, awaitingAccess, mode, currentUser.id]);
 
   // Persona switch or sign-out: end the previous user's tour.
   useEffect(() => stop, [currentUser.id, stop]);

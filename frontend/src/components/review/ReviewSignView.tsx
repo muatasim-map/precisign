@@ -1,3 +1,4 @@
+import { assignedProcessorIds, processorTaskLabels } from '../../../../shared/utils/processorHandoff';
 import { toast } from '../common/Toaster';
 import { useSlidingPill } from '../common/useSlidingPill';
 import { ReviewSupportingFiles } from './ReviewSupportingFiles';
@@ -295,7 +296,8 @@ export const ReviewSignView: React.FC = () => {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  const handleDownloadAttachment = async (file: AttachmentItem, version = selectedVersion) => {
+  /** Resolves true only when the browser was handed the file, so callers can confirm honestly. */
+  const handleDownloadAttachment = async (file: AttachmentItem, version = selectedVersion): Promise<boolean> => {
     let href: string | undefined;
     let objectUrl: string | undefined;
     try {
@@ -312,12 +314,13 @@ export const ReviewSignView: React.FC = () => {
       }
       if (!href) {
         setActionSuccess(`Reference attachment: ${file.name} (${file.sizeFormatted})`);
-        return;
+        return false;
       }
       const link = document.createElement('a');
       link.href = href;
       link.download = file.name;
       link.click();
+      return true;
     } catch (error) {
       captureFrontendError(error, { flow: 'attachment-download' });
       if (error instanceof ApiError) {
@@ -337,6 +340,7 @@ export const ReviewSignView: React.FC = () => {
       } else {
         setActionError('Could not download this attachment. Check your connection and try again.');
       }
+      return false;
     } finally {
       const downloadUrl = objectUrl;
       if (downloadUrl) setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
@@ -509,6 +513,15 @@ export const ReviewSignView: React.FC = () => {
           </p>
           {isReturned && <p className="border-l-2 border-amber-400 pl-2.5 text-sm text-amber-950 [overflow-wrap:anywhere]"><strong>With {request.requesterName} for correction.</strong> {correctionReason || 'The signer requested changes.'}</p>}
           {request.status === 'Pending Approval' && currentStep?.assignedUserName && <p className="text-sm text-slate-700"><strong className="text-[#192B3C]">Next to sign</strong> · {currentStep.assignedUserId === currentUser.id ? 'You' : currentStep.assignedUserName} · {currentStep.stageName}</p>}
+          {request.status === 'Approved' && (() => {
+            // What happens next, in plain words. "Opened" is a viewing receipt only; payment and fulfilment are tracked separately below.
+            const people = assignedProcessorIds(request);
+            if (!people.length) return <p className="text-sm text-slate-700"><strong className="text-[#192B3C]">Signing is complete.</strong></p>;
+            const opened = (request.processorReads ?? []).filter(read => read.version === request.documentVersion && people.includes(read.userId)).length;
+            const labels = processorTaskLabels(request.formType);
+            const where = [...new Set((request.processorHandoff ?? []).map(task => labels[task.taskId]).filter(Boolean))].join(' & ') || 'the assigned people';
+            return <p className="text-sm text-slate-700"><strong className="text-[#192B3C]">Signing is complete.</strong> Sent to {where} · {opened ? `opened by ${opened} of ${people.length}` : 'not opened yet'}. Payment and fulfilment are tracked separately.</p>;
+          })()}
           {request.status === 'Pending Approval' && request.pendingReplacement && <p className="text-sm text-slate-700"><strong className="text-[#192B3C]">Final signer replacement pending.</strong> {canRespond ? 'Your response is needed.' : 'The current signer stays assigned until acceptance.'}</p>}
         </div>
       </header>
@@ -536,7 +549,7 @@ export const ReviewSignView: React.FC = () => {
 
       {/* Notifications / Alerts */}
       {actionError && !actionModal && (
-        <div role="alert" className="no-print p-3 bg-rose-50 border border-rose-200 rounded-md text-xs text-rose-800 flex items-center justify-between">
+        <div key={actionError} role="alert" className="handoff-enter alert-nudge no-print p-3 bg-rose-50 border border-rose-200 rounded-md text-xs text-rose-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
             <span>{actionError}</span>
@@ -548,7 +561,7 @@ export const ReviewSignView: React.FC = () => {
       )}
 
       {actionSuccess && (
-        <div role="status" className="no-print p-3 bg-emerald-50 border border-emerald-200 rounded-md text-xs text-emerald-800 flex items-center justify-between">
+        <div key={actionSuccess} role="status" className="handoff-enter no-print p-3 bg-emerald-50 border border-emerald-200 rounded-md text-xs text-emerald-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
             <span>{actionSuccess}</span>

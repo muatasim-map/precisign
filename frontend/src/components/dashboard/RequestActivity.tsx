@@ -3,6 +3,8 @@ export function RequestActivity({ total, items, select }: {
   items: { label: string; count: number; key: string; color: string; active: boolean }[];
   select: (key: string) => void;
 }) {
+  // Nothing to show: every category is zero, so the ring would only repeat the summary cards.
+  if (items.every(item => item.count === 0)) return null;
   return <section className="workspace-panel p-4" aria-label="Request activity">
     <h2 className="text-base font-bold">Request activity</h2>
     <div className="flex flex-wrap items-center gap-5">

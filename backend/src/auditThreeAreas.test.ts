@@ -43,15 +43,13 @@ test('AREA 1: Authentication and Sessions - Admin-only signup, first-sign-in pol
 
     const adminCookie = `precisign_session=${createSession(db, adminId)}`;
 
-    // A. Public signup route is strictly 403
+    // A. Public signup rejects incomplete profiles
     const publicSignupRes = await fetch(`${base}/auth/signup`, {
       method: 'POST',
       headers: { Origin: 'http://localhost:3000', 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'Hacker', email: 'hacker@test.com', password: 'Password123!' }),
     });
-    assert.equal(publicSignupRes.status, 403, 'Public signup is forbidden');
-    const publicSignupData = await publicSignupRes.json();
-    assert.equal(publicSignupData.error, 'Account creation is managed by your administrator.');
+    assert.equal(publicSignupRes.status, 400, 'Signup requires a department');
 
     // B. Super admin creates an employee account -> mustChangePassword is required
     const tempPassword = 'TempEmployeePass123!';

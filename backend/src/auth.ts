@@ -63,10 +63,11 @@ export async function registerAccount(
     requireSuperAdmin?: (() => void) | ((tx: AsyncQueryConnection) => Promise<void>);
   }
 ) {
-  fields(input, ['name', 'email', 'department', 'password', 'signatureDataUrl']);
+  fields(input, ['name', 'email', 'department', 'password', 'signatureDataUrl', 'jobTitle']);
   const body = input as Record<string, unknown>;
   const name = text(body.name, 150).trim();
   const department = text(body.department, 150).trim();
+  const jobTitle = body.jobTitle === undefined ? null : text(body.jobTitle, 150, false).trim() || null;
   const email = normalizeEmail(text(body.email, 254));
   const password = text(body.password, 1024, false);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new RequestError(400, 'Invalid account details.');
@@ -85,8 +86,8 @@ export async function registerAccount(
       (options.requireSuperAdmin as () => void)();
     }
     // The legacy company column is required by older records. Explicit grants control access.
-    const result = db.prepare(`INSERT INTO users (id,email,name,role,department,company_id,password_hash)
-      VALUES (?, ?, ?, ?, ?, 'PEW', ?) ON CONFLICT(email) DO NOTHING`).run(id, email, name, storedRole, department, hash);
+    const result = db.prepare(`INSERT INTO users (id,email,name,role,department,company_id,password_hash,job_title)
+      VALUES (?, ?, ?, ?, ?, 'PEW', ?, ?) ON CONFLICT(email) DO NOTHING`).run(id, email, name, storedRole, department, hash, jobTitle);
     if (result.changes === 0) throw new RequestError(409, 'Account could not be created.');
     db.prepare("INSERT INTO account_access (user_id,role_override,must_change_password) VALUES (?,?,?)").run(id, roleOverride, mustChange);
     db.prepare("INSERT INTO company_access_roles SELECT ?, id, '[]' FROM companies").run(id);
@@ -98,8 +99,8 @@ export async function registerAccount(
     if (options?.requireSuperAdmin) {
       await (options.requireSuperAdmin as (tx: AsyncQueryConnection) => Promise<void>)(tx);
     }
-    const result = await tx.execute(`INSERT INTO users (id,email,name,role,department,company_id,password_hash)
-      VALUES (?, ?, ?, ?, ?, 'PEW', ?) ON CONFLICT(email) DO NOTHING`, [id, email, name, storedRole, department, hash]);
+    const result = await tx.execute(`INSERT INTO users (id,email,name,role,department,company_id,password_hash,job_title)
+      VALUES (?, ?, ?, ?, ?, 'PEW', ?, ?) ON CONFLICT(email) DO NOTHING`, [id, email, name, storedRole, department, hash, jobTitle]);
     if (result.rowsAffected === 0) throw new RequestError(409, 'Account could not be created.');
     await tx.execute("INSERT INTO account_access (user_id,role_override,must_change_password) VALUES (?,?,?)", [id, roleOverride, mustChange]);
     await tx.execute("INSERT INTO company_access_roles SELECT ?, id, '[]' FROM companies", [id]);

@@ -34,7 +34,7 @@ export class ApiPreciSignRepository implements IAccountAdministrationRepository,
     return data;
   }
   async login(email: string, password: string) { const data: any = await this.call('/auth/login', 'POST', { email, password }); const user = this.profile(data?.user); this.actorId = user.id; return user; }
-  async signup(input: { name: string; email: string; department: string; password: string; signatureDataUrl?: string }) {
+  async signup(input: { name: string; email: string; department: string; jobTitle?: string; password: string; signatureDataUrl?: string }) {
     await this.call('/auth/signup', 'POST', input);
   }
   async changePassword(currentPassword: string, newPassword: string) {

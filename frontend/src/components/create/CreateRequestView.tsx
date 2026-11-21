@@ -399,9 +399,9 @@ export const CreateRequestView: React.FC = () => {
       <EditorViewToggle value={activeMobileTab} onChange={setActiveMobileTab} />
 
       {/* Alerts */}
-      {draftSaveError && <div role="alert" className="p-3 bg-rose-50 border border-rose-200 rounded-md text-xs text-rose-800 space-y-2"><p>{draftSaveError}</p><button disabled={draftSaving} className="underline mr-3" onClick={retrySave}>Retry draft save</button>{connected && <button className="underline" onClick={() => setDraftDialog('reload')}>Load saved draft</button>}</div>}
+      {draftSaveError && <div key={draftSaveError} role="alert" className="handoff-enter p-3 bg-rose-50 border border-rose-200 rounded-md text-xs text-rose-800 space-y-2"><p>{draftSaveError}</p><button disabled={draftSaving} className="underline mr-3" onClick={retrySave}>Retry draft save</button>{connected && <button className="underline" onClick={() => setDraftDialog('reload')}>Load saved draft</button>}</div>}
       {validationError && (
-        <div role="alert" className="p-3 bg-rose-50 border border-rose-200 rounded-md text-xs text-rose-800 flex items-center gap-2">
+        <div key={validationError} role="alert" className="handoff-enter alert-nudge p-3 bg-rose-50 border border-rose-200 rounded-md text-xs text-rose-800 flex items-center gap-2">
           <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
           <span>{validationError}</span>
         </div>

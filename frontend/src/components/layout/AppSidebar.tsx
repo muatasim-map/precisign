@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { BrandLockup } from './BrandLockup';
 import { AccountMenu } from './AccountMenu';
+import { Ticker } from '../common/Ticker';
 import { RouteRailMotif } from '../decor/RouteMotifs';
 import { canConfigureSigningRoutes } from '../../utils/workflowAdministration';
 
@@ -159,8 +160,8 @@ export const AppSidebar: React.FC<{ canOpenDirectory?: boolean; onSignOut?: () =
                 <span className="truncate">Needs my action</span>
               </div>
               {pendingApprovalsCount > 0 ? (
-                <span className="bg-cyan-200 text-[#12374d] text-[10px] font-black px-1.5 py-0.5 rounded-full min-w-[18px] text-center tabular-nums shadow-xs">
-                  {pendingApprovalsCount}
+                <span className="sidebar-count-badge bg-cyan-200 text-[#12374d] text-[10px] font-black px-1.5 py-0.5 rounded-full min-w-[18px] text-center tabular-nums shadow-xs overflow-hidden">
+                  <Ticker value={pendingApprovalsCount} />
                 </span>
               ) : (
                 <span className="text-[10px] text-slate-400 tabular-nums font-mono">0</span>
@@ -183,7 +184,7 @@ export const AppSidebar: React.FC<{ canOpenDirectory?: boolean; onSignOut?: () =
                 <FileText aria-hidden="true" className={`size-4 shrink-0 ${isMyRequestsActive ? 'text-teal-200' : 'text-slate-300'}`} />
                 <span className="truncate">My PreciRoutes</span>
               </div>
-              <span className="text-[10px] text-slate-400 tabular-nums font-mono">{myRequestsCount}</span>
+              <span className="text-[10px] text-slate-400 tabular-nums font-mono overflow-hidden"><Ticker value={myRequestsCount} /></span>
             </Link>
 
             {/* 4. All Requests */}
@@ -211,7 +212,6 @@ export const AppSidebar: React.FC<{ canOpenDirectory?: boolean; onSignOut?: () =
 
             {/* 5. Forms Library */}
             <Link
-              data-tour="nav-forms"
               href="/forms"
               onClick={() => handleNav('forms-library')}
               aria-current={activeView === 'forms-library' ? 'page' : undefined}
