@@ -410,6 +410,7 @@ const ApiApp: React.FC = () => {
       <div>
         <PasswordField id="account-password" label="Password" autoComplete={signup ? 'new-password' : 'current-password'} value={password} onChange={setPassword} email={signup ? email : undefined} showRules={signup} />
         {!signup && <button className="preci-link mt-2" type="button" aria-expanded={forgot} onClick={() => setForgot(value => !value)}>Forgot password?</button>}
+
         {!signup && forgot && <div className="mt-2 space-y-2 rounded-lg bg-workspace p-3 text-sm text-workspace-muted">
           <p>Super admins can request a reset by email. For other accounts, contact your super admin for a private reset link.</p>
           <button type="button" className="preci-link" disabled={resetRequestBusy || !email.trim()} onClick={async () => {

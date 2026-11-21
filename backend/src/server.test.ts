@@ -10,6 +10,8 @@ import { hashPassword, verifyPassword, provisionUser, registerAccount, sessionLi
 import { createApp } from './app';
 import { MockEmailTransport } from './email';
 
+import { MockEmailTransport } from './email';
+
 const account = { email: 'worker@example.test', name: 'Test Worker', department: 'Test', role: 'Admin' as const, companyId: 'PEW' as const };
 const password = 'Synthetic-test-password-123';
 
