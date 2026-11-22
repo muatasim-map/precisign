@@ -85,6 +85,7 @@ export const ReviewSignView: React.FC = () => {
 
   const [selectedVersion, setSelectedVersion] = useState<number>(request ? request.documentVersion : 1);
   const [receiptError, setReceiptError] = useState('');
+  const [downloadStatus, setDownloadStatus] = useState<Record<string, 'busy' | 'done' | undefined>>({});
   const [copied, setCopied] = useState(false);
   const reviewToggle = useSlidingPill();
   const [actionsSheet, setActionsSheet] = useState<'closed' | 'open' | 'closing'>('closed');
@@ -345,6 +346,13 @@ export const ReviewSignView: React.FC = () => {
       const downloadUrl = objectUrl;
       if (downloadUrl) setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
     }
+  };
+  const downloadWithFeedback = async (file: AttachmentItem) => {
+    if (downloadStatus[file.id] === 'busy') return;
+    setDownloadStatus(current => ({ ...current, [file.id]: 'busy' }));
+    const ok = await handleDownloadAttachment(file);
+    setDownloadStatus(current => ({ ...current, [file.id]: ok ? 'done' : undefined }));
+    if (ok) window.setTimeout(() => setDownloadStatus(current => current[file.id] === 'done' ? { ...current, [file.id]: undefined } : current), 1400);
   };
 
   const handleSignatureConfirmation = (signature: string, note?: string) => {
@@ -860,7 +868,7 @@ export const ReviewSignView: React.FC = () => {
                   </>}
               </div>
             </details>}
-          <ReviewSupportingFiles version={selectedVersion} attachments={visibleAttachments} onDownload={handleDownloadAttachment} />
+          <ReviewSupportingFiles version={selectedVersion} attachments={visibleAttachments} onDownload={downloadWithFeedback} status={downloadStatus} />
 
           {/* Detailed approval history */}
           {!onLatestVersion && <p className="text-xs text-workspace-muted">Showing document version {selectedVersion}. The history below contains activity across versions; the progress summary above shows the latest route.</p>}

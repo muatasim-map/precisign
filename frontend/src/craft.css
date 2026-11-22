@@ -98,6 +98,8 @@
     .reveal[data-open="true"] { grid-template-rows: 1fr; }
     .reveal > * { min-height: 0; overflow: hidden; opacity: 0; transition: opacity 180ms ease; }
     .reveal[data-open="true"] > * { opacity: 1; }
+    .reveal:not([data-open="true"]) { transition-duration: 160ms; }
+    .reveal:not([data-open="true"]) > * { transition-duration: 120ms; }
 
     /* Status chip cross-morph when a request updates live. */
     .status-morph { animation: craft-chip 260ms var(--ease-out) both; }
@@ -114,6 +116,8 @@
       transition: transform 400ms ease, opacity 400ms ease;
     }
     .preci-toast[data-mounted="true"] { opacity: 1; transform: translateY(0); }
+    /* Leaves along the path it came in by, faster than it arrived, and finishes before it is removed. */
+    .preci-toast[data-leaving] { transition-duration: 200ms; transition-timing-function: var(--ease-out); }
     .preci-toast-icon { margin-top: 0.0625rem; color: var(--color-workspace-teal); }
     .preci-toast[data-tone="error"] .preci-toast-icon { color: #be123c; }
     .preci-toast[data-tone="info"] .preci-toast-icon { color: var(--color-workspace-steel); }
@@ -144,6 +148,8 @@
       transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out);
     }
     .hover-preview[data-open="true"] { opacity: 1; transform: none; }
+    /* Warm hand-off between neighbouring IDs: no second delay, no second grow. */
+    .hover-preview[data-instant] { transition: none; }
 
     /* ---------- Bottom sheet (mobile) ---------- */
     .sheet { position: fixed; inset: auto 0 0 0; z-index: 55; max-height: 85dvh; display: flex; flex-direction: column; border-radius: 1rem 1rem 0 0; background: #fff; box-shadow: 0 -16px 40px -16px rgb(9 24 42 / 35%); transform: translateY(100%); transition: transform 360ms var(--ease-drawer, cubic-bezier(0.32, 0.72, 0, 1)); }
@@ -232,7 +238,9 @@
 
     /* ---------- Number ticker ---------- */
     .ticker { display: inline-block; font-variant-numeric: tabular-nums; }
+    /* The new number rolls in from the side the count moved toward; a 2px blur bridges the swap. */
     .ticker[data-changed="true"] { animation: ticker-in 260ms var(--ease-out) both; }
+    .ticker[data-direction="down"] { animation-name: ticker-in-down; }
 
     /* ---------- Tactile checkboxes ---------- */
     main input[type="checkbox"]:not(.sr-only):not([role="switch"]):not(:is(.printable-area, .admin-work-document, .document-preview-page, .editor-preview) *) {
@@ -285,7 +293,8 @@
 @keyframes step-pulse { 0% { box-shadow: 0 0 0 0 rgb(14 116 144 / 28%); } 100% { box-shadow: 0 0 0 10px rgb(14 116 144 / 0%); } }
 @keyframes sheet-in { from { transform: translateY(100%); } to { transform: none; } }
 @keyframes sheet-out { from { transform: none; } to { transform: translateY(100%); } }
-@keyframes ticker-in { from { opacity: 0; transform: translateY(40%); } to { opacity: 1; transform: none; } }
+@keyframes ticker-in { from { opacity: 0; transform: translateY(45%); filter: blur(2px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes ticker-in-down { from { opacity: 0; transform: translateY(-45%); filter: blur(2px); } to { opacity: 1; transform: none; filter: none; } }
 
 /* Unlayered on purpose: these must win over the unlayered editor toggle styles in workspace-ui.css. */
 @media screen {
@@ -337,4 +346,34 @@
 @media screen {
   .seg-pill-underline { border-radius: 2px; background: #365c78; box-shadow: none; }
   .seg-group > .seg-pill-underline ~ button { background: transparent; }
+}
+
+/* ---------- Round 11: tuning existing motion and press feedback ---------- */
+@media screen {
+  /* Access switch: the thumb stretches toward its travel while pressed (iOS-style), then settles. */
+  .access-switch::before { transition: transform 180ms var(--ease-out), scale 160ms var(--ease-out); transform-origin: left center; }
+  .access-switch:checked::before { transform-origin: right center; }
+  .access-switch:active:not(:disabled)::before { scale: 1.18 1; }
+
+  /* Segmented tabs and pills give the same small press as every other button. */
+  .dash-tab, .seg-group > button { transition: color 160ms ease, transform 160ms var(--ease-out); }
+  .dash-tab:active, .seg-group > button:active:not(:disabled) { transform: scale(0.97); }
+
+  /* Attachment download: arrow → spinner → check; the button tints only while the check shows. */
+  .download-button { transition: border-color 160ms ease, background-color 160ms ease, transform 160ms var(--ease-out); }
+  .download-button[data-state="done"] { border-color: #a9d5ce; background-color: var(--color-workspace-tint); }
+  .download-button[data-state="busy"] { cursor: progress; }
+  .download-button .icon-morph > [data-active="true"].download-check { animation: craft-pop 260ms var(--ease-out) both; }
+
+  /* Sidebar counts roll inside their badge instead of spilling out of it. */
+  .sidebar-count-badge { display: inline-block; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .access-switch::before { transition: none; }
+  .access-switch:active::before { scale: none; }
+  .dash-tab, .seg-group > button { transition: color 160ms ease; }
+  .dash-tab:active, .seg-group > button:active { transform: none; }
+  .dash-tab-pill { transition: opacity 120ms ease; }
+  .ticker[data-changed="true"] { animation-name: craft-fade; }
+  .download-button .icon-morph > [data-active="true"].download-check { animation: none; }
 }

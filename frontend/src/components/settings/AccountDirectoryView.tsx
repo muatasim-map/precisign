@@ -35,7 +35,7 @@ import { INITIAL_COMPANIES } from '../../data/seedData';
 import { companyForms } from '../library/FormsLibraryView';
 import { AccessRolesPanel } from './AccessRolesPanel';
 
-type Editor = { account: AccountDirectoryEntry; mode: 'access' | 'email' | 'status' | 'reset' | 'role' };
+type Editor = { account: AccountDirectoryEntry; mode: 'access' | 'name' | 'email' | 'status' | 'reset' | 'role' };
 type FormGrants = Partial<Record<CompanyId, string[]>>;
 
 function isAwaitingAccess(account: AccountDirectoryEntry) {
@@ -44,6 +44,7 @@ function isAwaitingAccess(account: AccountDirectoryEntry) {
 
 const editorTitles = {
   access: 'Access Rights',
+  name: 'Change name',
   email: 'Change sign-in email',
   role: 'Change staff role',
   status: 'Account status',
@@ -239,7 +240,25 @@ export function AccountDirectoryView({ repository }: { repository: IAccountAdmin
                       {account.department && <span className="text-workspace-muted">{account.department}</span>}
                     </div>
                     <p className="mt-0.5 text-xs [overflow-wrap:anywhere] text-workspace-muted">{account.email}</p>
-
+                    {!!account.identityHistory?.length && <details className="access-details mt-2">
+                      <summary>Account change history</summary>
+                      <ul className="mt-2 space-y-2 text-xs text-workspace-muted">
+                        {account.identityHistory.map(change => <li key={change.id} className="[overflow-wrap:anywhere]">
+                          <time dateTime={change.changedAt}>{new Date(change.changedAt).toLocaleString()}</time>
+                          <p>{change.field === 'name' ? 'Name' : 'Sign-in email'} changed by {change.actorId === account.id ? 'this employee' : accounts?.find(person => person.id === change.actorId)?.name ?? change.actorId}</p>
+                          <p>{change.oldValue} → {change.newValue}</p>
+                        </li>)}
+                      </ul>
+                    </details>}
+                    {!!account.nameHistory?.length && <details className="access-details mt-2">
+                      <summary>Name change history</summary>
+                      <ul className="mt-2 space-y-2 text-xs text-workspace-muted">
+                        {account.nameHistory.map(change => <li key={change.id} className="[overflow-wrap:anywhere]">
+                          <time dateTime={change.changedAt}>{new Date(change.changedAt).toLocaleString()}</time>
+                          <p>{change.oldName} → {change.newName}</p>
+                        </li>)}
+                      </ul>
+                    </details>}
                   </div>
                 </div>
 
@@ -349,6 +368,10 @@ export function AccountDirectoryView({ repository }: { repository: IAccountAdmin
                       >
                         <Mail aria-hidden="true" className="size-4" /> Change email
                       </button>
+                      {!isShowcaseBuild && <button type="button" className="preci-menu-action w-full text-left"
+                        disabled={account.companyGrants === null} onClick={event => openEditor(account, 'name', event.currentTarget)}>
+                        <UsersRound aria-hidden="true" className="size-4" /> Change name
+                      </button>}
                       {account.companyGrants !== null && !account.isDisabled && !['Director', 'General Manager'].includes(account.role) && (
                         <button
                           type="button"
@@ -433,6 +456,7 @@ function AccountEditor({
 }) {
   const { account, mode } = editor;
   const dialog = useRef<HTMLDialogElement>(null);
+  const [employeeName, setEmployeeName] = useState(account.name);
   const [email, setEmail] = useState(account.email);
   const [role, setRole] = useState<StaffRole | ''>('');
   const { workflows } = useApp();
@@ -515,6 +539,9 @@ function AccountEditor({
         if (!role) return;
         await repository.updateAccount(account.id, { role });
         onSaved(`Staff role updated for ${account.name}.`);
+      } else if (mode === 'name') {
+        await repository.updateAccount(account.id, { name: employeeName.trim() });
+        onSaved('Employee name updated.');
       } else if (mode === 'email') {
         await repository.updateAccount(account.id, { email });
         onSaved(`Sign-in email updated for ${account.name}.`);
@@ -537,6 +564,7 @@ function AccountEditor({
   }
 
   const submitLabel = mode === 'access' ? 'Save access'
+    : mode === 'name' ? 'Save name'
     : mode === 'email' ? 'Save email'
     : mode === 'role' ? 'Save role'
     : mode === 'reset' ? 'Create reset link'
@@ -625,6 +653,13 @@ function AccountEditor({
             </div>
           )}
 
+          {mode === 'name' && (
+            <label className="preci-field">
+              Full name
+              <input name="name" className="workspace-control block w-full px-3 py-2" value={employeeName}
+                required maxLength={150} onChange={event => setEmployeeName(event.target.value)} />
+            </label>
+          )}
           {mode === 'email' && (
             <label className="preci-field">
               Sign-in email

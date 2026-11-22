@@ -4,6 +4,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { readRoutes } from './reads';
 import { companyBrandingRoutes } from './companyBranding';
 import { accessRoleRoutes } from './accessRoles';
+import { confirmOwnEmailChange, requestOwnEmailChange } from './accountIdentity';
 import { accountAdminRoutes } from './accountAdmin';
 import { requestRoutes } from './requestRoutes';
 import { workflowRoutes } from './workflows';
@@ -163,6 +164,12 @@ export async function createApp(db: DatabaseSync | AsyncDatabase, config: Server
       console.error('Password reset delivery could not be completed.');
     }
   });
+  app.post('/api/auth/confirm-email', limitAuthAttempts(false), express.json({ limit: '16kb' }), async (req, res, next) => {
+    try {
+      await confirmOwnEmailChange(db, req.body, now, transport);
+      res.status(204).end();
+    } catch (error) { next(error); }
+  });
   app.post('/api/auth/reset-password', limitAuthAttempts(false), express.json({ limit: '16kb' }), async (req, res, next) => {
     try {
       fields(req.body, ['token', 'newPassword']);
@@ -217,8 +224,14 @@ export async function createApp(db: DatabaseSync | AsyncDatabase, config: Server
     } catch (error) { next(error); }
   });
   app.use('/api', readRoutes(db, origin, req => token(req.get('Cookie')), attachmentStorage));
-  app.use('/api', profileRoutes(db));
-  app.use('/api', accountAdminRoutes(db, origin, now));
+  app.post('/api/me/email', limitAuthAttempts(false), async (req, res, next) => {
+    try {
+      await requestOwnEmailChange(db, res, req.body, origin, now, transport);
+      res.status(204).end();
+    } catch (error) { next(error); }
+  });
+  app.use('/api', profileRoutes(db, now));
+  app.use('/api', accountAdminRoutes(db, origin, now, transport));
   app.use('/api', accessRoleRoutes(db));
   app.use('/api', workflowRoutes(db));
   app.use('/api', draftRoutes(db));

@@ -503,7 +503,7 @@ export const CreateRequestView: React.FC = () => {
                     type="button"
                     aria-pressed={isSelected}
                     onClick={() => setPriority(level)}
-                    className={`workspace-control ${combined ? 'admin-payment-priority' : 'transition-all'} min-h-10 px-2 text-center text-xs font-semibold rounded-lg ${
+                    className={`workspace-control ${combined ? 'admin-payment-priority' : 'preci-press'} min-h-10 px-2 text-center text-xs font-semibold rounded-lg ${
                       isSelected
                         ? 'border-teal-700 bg-teal-50/80 text-teal-950 ring-1 ring-teal-700 shadow-xs'
                         : 'border-slate-300 bg-slate-50/60 text-slate-700 hover:bg-white hover:border-slate-400'

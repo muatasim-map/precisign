@@ -4,13 +4,90 @@ import { PageHeader } from '../common/PageHeader';
 import React, { useEffect, useState, useRef } from 'react';
 import { useApp, useUnsavedWork } from '../../context/AppContext';
 import { PenTool, Upload, Check, RotateCcw } from 'lucide-react';
-import { ActionButton, EditorSelect, FormField } from '../create/RequestEditorControls';
+import { ActionButton, EditorInput, EditorSelect, FormField } from '../create/RequestEditorControls';
 
 import { SignatureCropEditor } from './SignatureCropEditor';
 import { WorkspaceDialog } from '../common/WorkspaceDialog';
 
+function NameForm({ name, save }: { name: string; save: (name: string) => Promise<void> }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState(false);
+
+  return (
+    <form aria-label="Change your name" className="space-y-2 border-t border-workspace-line pt-4" onSubmit={async event => {
+      event.preventDefault();
+      if (saving) return;
+      const next = (draft ?? name).trim();
+      if (!next) {
+        setError(true);
+        setMessage('Enter your name.');
+        return;
+      }
+      if (next === name) return;
+      setSaving(true);
+      setError(false);
+      setMessage('');
+      try {
+        await save(next);
+        setDraft(null);
+        setMessage('Name saved.');
+      } catch (cause) {
+        setError(true);
+        setMessage(cause instanceof Error ? cause.message : 'Could not save your name.');
+      } finally {
+        setSaving(false);
+      }
+    }}>
+      <FormField id="profile-name" label="Full name">
+        <EditorInput id="profile-name" name="name" autoComplete="name" required maxLength={150}
+          value={draft ?? name} disabled={saving} onChange={event => { setDraft(event.target.value); setMessage(''); }} />
+      </FormField>
+      <ActionButton type="submit" size="sm" disabled={saving}>{saving ? 'Saving…' : 'Save name'}</ActionButton>
+      {message && <p className={error ? 'text-sm text-rose-700' : 'text-sm text-workspace-muted'} role={error ? 'alert' : 'status'}>{message}</p>}
+    </form>
+  );
+}
+
+export function EmailChangeForm({ request }: { request: (email: string, password: string) => Promise<void> }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<{ message: string; error?: boolean }>();
+  return (
+    <details className="border-t border-workspace-line pt-4">
+      <summary className="cursor-pointer text-sm font-semibold text-workspace-ink">Change sign-in email</summary>
+      <form aria-label="Change sign-in email" className="mt-3 space-y-3" onSubmit={async event => {
+        event.preventDefault();
+        if (busy) return;
+        setBusy(true);
+        setFeedback(undefined);
+        try {
+          await request(email.trim(), password);
+          setPassword('');
+          setFeedback({ message: 'Check your new inbox for a confirmation link. Your current email stays active until you confirm.' });
+        } catch (error) {
+          setFeedback({ message: error instanceof Error ? error.message : 'Could not send the confirmation link.', error: true });
+        } finally { setBusy(false); }
+      }}>
+        <FormField id="profile-new-email" label="New sign-in email">
+          <EditorInput id="profile-new-email" name="email" type="email" autoComplete="email" maxLength={254} required
+            value={email} disabled={busy} onChange={event => setEmail(event.target.value)} />
+        </FormField>
+        <FormField id="profile-email-password" label="Current password">
+          <EditorInput id="profile-email-password" name="currentPassword" type="password" autoComplete="current-password" required
+            value={password} disabled={busy} onChange={event => setPassword(event.target.value)} />
+        </FormField>
+        <ActionButton type="submit" size="sm" disabled={busy}>{busy ? 'Sending…' : 'Send confirmation link'}</ActionButton>
+        {feedback && <p role={feedback.error ? 'alert' : 'status'} className={feedback.error ? 'text-sm text-rose-700' : 'text-sm text-workspace-muted'}>{feedback.message}</p>}
+      </form>
+    </details>
+  );
+}
+
 export const UserProfileView: React.FC = () => {
-  const { currentUser, updateUserSignature, users, setCurrentUserId, readOnly: connected, signatureReturn, openReviewRequest } = useApp();
+  const { currentUser, requestEmailChange, updateUserName, updateUserSignature, users, setCurrentUserId, readOnly: connected, signatureReturn, openReviewRequest } = useApp();
 
   const [activeTab, setActiveTab] = useState<'draw' | 'upload'>('upload');
   const [source, setSource] = useState<string | null>(null);
@@ -154,6 +231,8 @@ export const UserProfileView: React.FC = () => {
             </div>
           </div>
 
+          {!isLoadingEmployee && <NameForm key={currentUser.id} name={currentUser.name} save={updateUserName} />}
+
           <dl className="space-y-3 border-t border-workspace-line pt-4 text-sm">
             <div>
               <dt className="text-xs font-medium text-workspace-muted">Department</dt>
@@ -164,6 +243,8 @@ export const UserProfileView: React.FC = () => {
               <dd className="mt-0.5 [overflow-wrap:anywhere] text-workspace-ink">{currentUser.email}</dd>
             </div>
           </dl>
+
+          {requestEmailChange && <EmailChangeForm key={currentUser.id} request={requestEmailChange} />}
 
           {!connected && (
             <FormField id="profile-persona" label="Demo persona">

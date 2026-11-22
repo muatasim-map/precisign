@@ -65,7 +65,7 @@ export class ApiPreciSignRepository implements IAccountAdministrationRepository,
     if (!Array.isArray(data)) throw new ApiError(502, 'Invalid account directory response.', 'INVALID_RESPONSE');
     return data;
   }
-  async updateAccount(id: string, update: { email?: string; isDisabled?: boolean; role?: StaffRole }) {
+  async updateAccount(id: string, update: { name?: string; email?: string; isDisabled?: boolean; role?: StaffRole }) {
     await this.call(`/admin/accounts/${encodeURIComponent(id)}`, 'PATCH', update);
   }
   async updateGrants(id: string, companyIds: CompanyId[], formsByCompany: Partial<Record<CompanyId, string[]>>, access?: AccountRouteAccessUpdate) {
@@ -81,6 +81,12 @@ export class ApiPreciSignRepository implements IAccountAdministrationRepository,
   }
   async requestPasswordReset(email: string) {
     await this.call('/auth/forgot-password', 'POST', { email });
+  }
+  async requestEmailChange(email: string, currentPassword: string) {
+    await this.call('/me/email', 'POST', { email, currentPassword });
+  }
+  async confirmEmailChange(token: string) {
+    await this.call('/auth/confirm-email', 'POST', { token });
   }
   async resetPassword(token: string, newPassword: string) {
     await this.call('/auth/reset-password', 'POST', { token, newPassword });
@@ -184,6 +190,10 @@ export class ApiPreciSignRepository implements IAccountAdministrationRepository,
     const data: any = await this.call(`/workflows/${encodeURIComponent(workflow.companyId)}/${encodeURIComponent(workflow.formType)}`, 'PUT', { expectedVersion: workflow.version, workflow });
     if (!data || !Number.isSafeInteger(data.version) || data.version < 1 || !Array.isArray(data.stages)) throw new ApiError(502, 'Invalid workflow response.', 'INVALID_RESPONSE');
     return data;
+  }
+  async updateUserName(id: string, name: string): Promise<Pick<UserProfile, 'name' | 'initials'>> {
+    if (id !== this.actorId) throw new ApiError(403, 'Only your own name can be updated.');
+    return await this.call('/me/name', 'PATCH', { name }) as Pick<UserProfile, 'name' | 'initials'>;
   }
   async updateUserSignature(id: string, image?: string, text?: string): Promise<UserProfile> {
     if (id !== this.actorId) throw new ApiError(403, 'Only your own signature can be updated.');

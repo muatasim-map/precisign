@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 
-export const schemaVersion = 14;
+export const schemaVersion = 16;
 
 function readSchemaVersion(db: DatabaseSync) {
   const version = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
@@ -172,6 +172,30 @@ function migrate(db: Pick<DatabaseSync, 'exec'>, version: number) {
   }
   if (version < 14) db.exec(`ALTER TABLE users ADD COLUMN job_title TEXT;
     ALTER TABLE users ADD COLUMN route_rights TEXT;`);
+  if (version < 15) db.exec(`CREATE TABLE IF NOT EXISTS account_name_changes (
+    id INTEGER PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    old_name TEXT NOT NULL,
+    new_name TEXT NOT NULL,
+    changed_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_account_name_changes_user ON account_name_changes(user_id, id);`);
+  if (version < 16) {
+    db.exec(`CREATE TABLE IF NOT EXISTS account_email_pending (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    email TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, expires_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS account_identity_changes (
+    id INTEGER PRIMARY KEY, user_id TEXT NOT NULL, actor_id TEXT NOT NULL,
+    field TEXT NOT NULL CHECK(field IN ('name','email')), old_value TEXT NOT NULL,
+    new_value TEXT NOT NULL, changed_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_account_identity_changes_user ON account_identity_changes(user_id,id);`);
+    db.exec(`CREATE TRIGGER IF NOT EXISTS cancel_email_change_on_password_change AFTER UPDATE OF password_hash ON users
+  WHEN OLD.password_hash<>NEW.password_hash BEGIN
+    DELETE FROM account_email_pending WHERE user_id=NEW.id;
+  END;`);
+  }
   if (version < schemaVersion) db.exec(`PRAGMA user_version = ${schemaVersion};`);
 }
 
@@ -181,7 +205,13 @@ export function migrationStatements(version: number): string[] {
     throw new Error('Invalid database schema version.');
   }
   const statements: string[] = [];
-  migrate({ exec(sql: string) { statements.push(...sql.split(';').map(part => part.trim()).filter(Boolean)); } }, version);
+  migrate({ exec(sql: string) {
+    if (sql.trimStart().startsWith('CREATE TRIGGER')) {
+      statements.push(sql.trim());
+      return;
+    }
+    statements.push(...sql.split(';').map(part => part.trim()).filter(Boolean));
+  } }, version);
   return statements;
 }
 

@@ -71,6 +71,7 @@ function ToastCard({ item, depth, paused }: { item: ToastItem; depth: number; pa
       className="preci-toast"
       data-tone={item.tone}
       data-mounted={mounted && !item.leaving}
+      data-leaving={item.leaving || undefined}
       style={{ ['--toast-depth' as string]: depth }}
       onPointerDown={event => {
         if (drag.current || event.pointerType === 'mouse') return; // one finger at a time; mouse uses the close button

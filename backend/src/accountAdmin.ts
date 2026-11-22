@@ -6,12 +6,14 @@ import { transaction } from './db';
 import { fields, RequestError, text } from './requestValidation';
 import type { AsyncDatabase, AsyncQueryConnection } from './asyncDatabase';
 
+import { accountChangeAudit, emailChangeStatements, notifyPreviousEmail } from './accountIdentity';
+import type { IEmailTransport } from './email';
 import { processorTaskLabels } from '../../shared/utils/processorHandoff';
 
 const companies = ['PEW', 'ICCL', 'FSG'];
 const forms = ['Administrative & Payment Request', 'IT Request', 'Cash Voucher', 'Expense Claim', 'R&D Initiative', 'Admin Work Request'];
 
-export function accountAdminRoutes(db: DatabaseSync | AsyncDatabase, origin: string, now: () => number) {
+export function accountAdminRoutes(db: DatabaseSync | AsyncDatabase, origin: string, now: () => number, transport?: IEmailTransport) {
   const router = Router();
   router.use('/admin/accounts', (_req, res, next) => {
     if (!res.locals.user.isSuperAdmin) { next(new RequestError(403, 'Administrator required.')); return; }
@@ -20,7 +22,12 @@ export function accountAdminRoutes(db: DatabaseSync | AsyncDatabase, origin: str
   router.get('/admin/accounts', async (_req, res, next) => {
     try {
     const sql = `SELECT id,name,email,notification_email,department,COALESCE(role_override,role) AS effective_role,company_grants,form_grants,is_super_admin,is_disabled,group_admin,company_permissions,job_title,route_rights,company_id,allowed_companies,
-      EXISTS(SELECT 1 FROM route_administrators WHERE user_id=account_profiles.id) AS is_route_admin
+      EXISTS(SELECT 1 FROM route_administrators WHERE user_id=account_profiles.id) AS is_route_admin,
+      (SELECT json_group_array(json_object('id', id, 'oldName', old_name, 'newName', new_name, 'changedAt', changed_at))
+       FROM (SELECT * FROM account_name_changes WHERE user_id = account_profiles.id ORDER BY id DESC)) AS name_history,
+      (SELECT json_group_array(json_object('id', id, 'actorId', actor_id, 'field', field,
+        'oldValue', old_value, 'newValue', new_value, 'changedAt', changed_at))
+       FROM (SELECT * FROM account_identity_changes WHERE user_id=account_profiles.id ORDER BY id DESC)) AS identity_history
       FROM account_profiles ORDER BY name COLLATE NOCASE, id`;
     const accounts = 'prepare' in db ? db.prepare(sql).all() : (await db.execute(sql)).rows;
     res.json(accounts.map(row => ({
@@ -35,6 +42,8 @@ export function accountAdminRoutes(db: DatabaseSync | AsyncDatabase, origin: str
       isSuperAdmin: row.is_super_admin === 1,
       isDisabled: row.is_disabled === 1,
       isGroupAdmin: row.group_admin === 1,
+      identityHistory: JSON.parse(String(row.identity_history)),
+      nameHistory: JSON.parse(String(row.name_history)),
       isRouteAdmin: (row as any).is_route_admin === 1,
     })));
     } catch (error) { next(error); }
@@ -63,11 +72,13 @@ export function accountAdminRoutes(db: DatabaseSync | AsyncDatabase, origin: str
   });
   router.patch('/admin/accounts/:id', async (req, res, next) => {
     try {
-      fields(req.body, ['email', 'isDisabled', 'role', 'notificationEmail']);
-      const { email, isDisabled, role, notificationEmail } = req.body;
+      fields(req.body, ['name', 'email', 'isDisabled', 'role', 'notificationEmail']);
+      const { name, email, isDisabled, role, notificationEmail } = req.body;
       if (role !== undefined && !['Employee', 'Admin', 'IT', 'Finance'].includes(role)) throw new RequestError(400, 'Invalid staff role.');
-      if (email === undefined && isDisabled === undefined && role === undefined && notificationEmail === undefined) throw new RequestError(400, 'No change requested.');
+      if (name === undefined && email === undefined && isDisabled === undefined && role === undefined && notificationEmail === undefined) throw new RequestError(400, 'No change requested.');
       if (isDisabled !== undefined && typeof isDisabled !== 'boolean') throw new RequestError(400, 'Invalid account status.');
+      const normalizedName = name === undefined ? undefined : text(name, 150).trim();
+      let previousEmail: string | undefined;
       const normalizedEmail = email === undefined ? undefined : normalizeEmail(text(email, 254));
       if (normalizedEmail !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) throw new RequestError(400, 'Invalid email.');
       const normalizedNotificationEmail = notificationEmail === undefined ? undefined : (notificationEmail === null ? null : normalizeEmail(text(notificationEmail, 254)));
@@ -75,7 +86,7 @@ export function accountAdminRoutes(db: DatabaseSync | AsyncDatabase, origin: str
       if ('prepare' in db) transaction(db, () => {
         const actor = res.locals.requireCurrentUser();
         if (!actor.isSuperAdmin) throw new RequestError(403, 'Administrator required.');
-        const target = db.prepare('SELECT id,email,is_super_admin,is_disabled,COALESCE(role_override,role) AS effective_role FROM account_profiles WHERE id=?').get(req.params.id);
+        const target = db.prepare('SELECT id,name,email,is_super_admin,is_disabled,COALESCE(role_override,role) AS effective_role FROM account_profiles WHERE id=?').get(req.params.id);
         if (!target) throw new RequestError(404, 'Account not found.');
         if (target.is_disabled === null) throw new RequestError(409, 'Legacy account access requires migration.');
         if (role !== undefined && role !== target.effective_role) {
@@ -90,14 +101,19 @@ export function accountAdminRoutes(db: DatabaseSync | AsyncDatabase, origin: str
         if (normalizedEmail !== undefined && normalizedEmail !== target.email) {
           const duplicate = db.prepare('SELECT id FROM users WHERE email=? AND id<>?').get(normalizedEmail, target.id!);
           if (duplicate) throw new RequestError(409, 'Email is already in use.');
-          db.prepare('UPDATE users SET email=? WHERE id=?').run(normalizedEmail, target.id!);
-          db.prepare('DELETE FROM sessions WHERE user_id=?').run(target.id!);
-          db.prepare('DELETE FROM password_resets WHERE user_id=?').run(target.id!);
+          previousEmail = String(target.email);
+          for (const [sql, args] of emailChangeStatements(String(target.id), actor.id, previousEmail, normalizedEmail, now())) db.prepare(sql).run(...args);
+        }
+        if (normalizedName !== undefined && normalizedName !== target.name) {
+          db.prepare('UPDATE users SET name=? WHERE id=?').run(normalizedName, target.id!);
+          const [sql, args] = accountChangeAudit(String(target.id), actor.id, 'name', String(target.name), normalizedName, now());
+          db.prepare(sql).run(...args);
         }
         if (isDisabled !== undefined && Number(isDisabled) !== target.is_disabled) {
           if (isDisabled) {
             db.prepare('UPDATE users SET route_rights=NULL WHERE id=?').run(target.id!);
             db.prepare("UPDATE account_access SET is_disabled=1,company_grants='[]',form_grants='{}' WHERE user_id=?").run(target.id!);
+            db.prepare('DELETE FROM account_email_pending WHERE user_id=?').run(target.id!);
             db.prepare('DELETE FROM sessions WHERE user_id=?').run(target.id!);
             db.prepare('DELETE FROM password_resets WHERE user_id=?').run(target.id!);
           } else {
@@ -109,8 +125,9 @@ export function accountAdminRoutes(db: DatabaseSync | AsyncDatabase, origin: str
         }
       });
       else await db.transaction(async tx => {
-        if (!(await res.locals.requireCurrentUserAsync(tx)).isSuperAdmin) throw new RequestError(403, 'Administrator required.');
-        const target = (await tx.execute('SELECT id,email,is_super_admin,is_disabled,COALESCE(role_override,role) AS effective_role FROM account_profiles WHERE id=?', [req.params.id])).rows[0];
+        const actor = await res.locals.requireCurrentUserAsync(tx);
+        if (!actor.isSuperAdmin) throw new RequestError(403, 'Administrator required.');
+        const target = (await tx.execute('SELECT id,name,email,is_super_admin,is_disabled,COALESCE(role_override,role) AS effective_role FROM account_profiles WHERE id=?', [req.params.id])).rows[0];
         if (!target) throw new RequestError(404, 'Account not found.');
         if (target.is_disabled === null) throw new RequestError(409, 'Legacy account access requires migration.');
         const id = String(target.id);
@@ -125,14 +142,19 @@ export function accountAdminRoutes(db: DatabaseSync | AsyncDatabase, origin: str
         }
         if (normalizedEmail !== undefined && normalizedEmail !== target.email) {
           if ((await tx.execute('SELECT id FROM users WHERE email=? AND id<>?', [normalizedEmail, id])).rows.length) throw new RequestError(409, 'Email is already in use.');
-          await tx.execute('UPDATE users SET email=? WHERE id=?', [normalizedEmail, id]);
-          await tx.execute('DELETE FROM sessions WHERE user_id=?', [id]);
-          await tx.execute('DELETE FROM password_resets WHERE user_id=?', [id]);
+          previousEmail = String(target.email);
+          for (const [sql, args] of emailChangeStatements(id, actor.id, previousEmail, normalizedEmail, now())) await tx.execute(sql, args);
+        }
+        if (normalizedName !== undefined && normalizedName !== target.name) {
+          await tx.execute('UPDATE users SET name=? WHERE id=?', [normalizedName, id]);
+          const [sql, args] = accountChangeAudit(id, actor.id, 'name', String(target.name), normalizedName, now());
+          await tx.execute(sql, args);
         }
         if (isDisabled !== undefined && Number(isDisabled) !== target.is_disabled) {
           await tx.execute("UPDATE account_access SET is_disabled=?,company_grants='[]',form_grants='{}' WHERE user_id=?", [Number(isDisabled), id]);
           if (isDisabled) {
             await tx.execute('UPDATE users SET route_rights=NULL WHERE id=?', [id]);
+            await tx.execute('DELETE FROM account_email_pending WHERE user_id=?', [id]);
             await tx.execute('DELETE FROM sessions WHERE user_id=?', [id]);
             await tx.execute('DELETE FROM password_resets WHERE user_id=?', [id]);
           }
@@ -141,6 +163,7 @@ export function accountAdminRoutes(db: DatabaseSync | AsyncDatabase, origin: str
           await tx.execute('UPDATE account_access SET notification_email=? WHERE user_id=?', [normalizedNotificationEmail, id]);
         }
       });
+      if (previousEmail && transport) await notifyPreviousEmail(transport, previousEmail);
       res.status(204).end();
     } catch (error) { next(error); }
   });

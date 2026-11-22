@@ -666,7 +666,9 @@ export function enqueueOutboxSync(
       id, request_id, event_type, recipient_user_id, recipient_email, recipient_name,
       subject, payload_json, idempotency_key, status, attempts, max_attempts,
       created_at, next_attempt_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, 3, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, json_set(?, '$.usesSignInEmail', NOT EXISTS (
+      SELECT 1 FROM account_access WHERE user_id=? AND COALESCE(notification_email,'')<>''
+    )), ?, 'pending', 0, 3, ?, ?)
   `);
 
   for (const item of items) {
@@ -679,6 +681,7 @@ export function enqueueOutboxSync(
       item.recipientName,
       item.subject,
       JSON.stringify(item.payload),
+      item.recipientUserId,
       item.idempotencyKey,
       item.nowMs,
       item.nowMs
@@ -696,7 +699,9 @@ export async function enqueueOutboxAsync(
       id, request_id, event_type, recipient_user_id, recipient_email, recipient_name,
       subject, payload_json, idempotency_key, status, attempts, max_attempts,
       created_at, next_attempt_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, 3, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, json_set(?, '$.usesSignInEmail', NOT EXISTS (
+      SELECT 1 FROM account_access WHERE user_id=? AND COALESCE(notification_email,'')<>''
+    )), ?, 'pending', 0, 3, ?, ?)
   `;
 
   for (const item of items) {
@@ -709,6 +714,7 @@ export async function enqueueOutboxAsync(
       item.recipientName,
       item.subject,
       JSON.stringify(item.payload),
+      item.recipientUserId,
       item.idempotencyKey,
       item.nowMs,
       item.nowMs,

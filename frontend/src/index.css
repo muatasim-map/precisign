@@ -57,7 +57,7 @@
       font-variant-numeric: tabular-nums;
     }
     .inbox-stat-chevron { color: var(--stat-color); transition: transform 160ms var(--ease-out), color 160ms ease; }
-    @media (hover: hover) {
+    @media (hover: hover) and (pointer: fine) {
       .inbox-stat:hover .inbox-stat-chevron { color: var(--stat-color); transform: translateX(2px); }
     }
     .inbox-stat:focus-visible { outline: 2px solid var(--color-workspace-teal); outline-offset: 2px; }

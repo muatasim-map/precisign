@@ -11,7 +11,7 @@ import { DashboardView } from './components/dashboard/DashboardView';
 import { CreateRequestView } from './components/create/CreateRequestView';
 import { ReviewSignView } from './components/review/ReviewSignView';
 import { WorkflowSettingsView } from './components/settings/WorkflowSettingsView';
-import { UserProfileView } from './components/profile/UserProfileView';
+import { EmailChangeForm, UserProfileView } from './components/profile/UserProfileView';
 import { companyForms, FormsLibraryView } from './components/library/FormsLibraryView';
 import { ArchiveRegisterView } from './components/archive/ArchiveRegisterView';
 import { ApiPreciSignRepository } from './services/apiRepository';
@@ -265,6 +265,13 @@ const ApiApp: React.FC = () => {
   const [minutesLeft, setMinutesLeft] = React.useState<number | null>(null);
   const [reauthPassword, setReauthPassword] = React.useState('');
   const [reauthBusy, setReauthBusy] = React.useState(false);
+  const [emailChangeToken, setEmailChangeToken] = React.useState(() => {
+    const token = new URLSearchParams(window.location.hash.slice(1)).get('confirm-email') || '';
+    if (token) window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    return token;
+  });
+  const [emailConfirmBusy, setEmailConfirmBusy] = React.useState(false);
+  const [emailConfirmError, setEmailConfirmError] = React.useState('');
   const [resetToken, setResetToken] = React.useState(() => {
     const token = new URLSearchParams(window.location.hash.slice(1)).get('reset') || '';
     if (token) window.history.replaceState(null, '', window.location.pathname + window.location.search);
@@ -277,7 +284,15 @@ const ApiApp: React.FC = () => {
   const session = React.useMemo(() => new ApiSession(repository, setState), [repository]);
   React.useEffect(() => {
     const onHashChange = () => {
-      const token = new URLSearchParams(window.location.hash.slice(1)).get('reset');
+      const params = new URLSearchParams(window.location.hash.slice(1));
+      const emailToken = params.get('confirm-email');
+      if (emailToken) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        setEmailConfirmError('');
+        setEmailChangeToken(emailToken);
+        return;
+      }
+      const token = params.get('reset');
       if (token) { window.history.replaceState(null, '', window.location.pathname + window.location.search); setResetToken(token); }
     };
     window.addEventListener('hashchange', onHashChange);
@@ -304,6 +319,26 @@ const ApiApp: React.FC = () => {
     const timer = window.setInterval(check, 15000);
     return () => window.clearInterval(timer);
   }, [state.status, expired, repository]);
+  if (emailChangeToken) return <AuthCard eyebrow="Account security" title="Confirm your new email" intro="Confirming changes your sign-in email and signs you out on all devices.">
+    <form aria-label="Confirm email change" className="space-y-3" onSubmit={async event => {
+      event.preventDefault();
+      if (emailConfirmBusy) return;
+      setEmailConfirmBusy(true);
+      setEmailConfirmError('');
+      try {
+        await repository.confirmEmailChange(emailChangeToken);
+        await session.restore();
+        setResetMessage('Email changed. Sign in with your new email address.');
+        setEmailChangeToken('');
+      } catch (error) {
+        setEmailConfirmError(error instanceof Error ? error.message : 'Could not confirm your email change.');
+      } finally { setEmailConfirmBusy(false); }
+    }}>
+      {emailConfirmError && <p role="alert" className="preci-error">{emailConfirmError}</p>}
+      <button type="submit" disabled={emailConfirmBusy} className="workspace-btn-primary w-full rounded-lg px-4 py-2">{emailConfirmBusy ? 'Confirming…' : 'Confirm email change'}</button>
+      <button type="button" disabled={emailConfirmBusy} className="preci-link" onClick={() => setEmailChangeToken('')}>Back to PreciSign</button>
+    </form>
+  </AuthCard>;
   if (resetToken) return <AuthCard eyebrow="Password reset" title="Set a new password" intro="Choose a password you’ll remember. This link works once.">
     <form className="space-y-4" onSubmit={async event => {
       event.preventDefault(); if (passwordChangeBusy) return;
@@ -323,6 +358,7 @@ const ApiApp: React.FC = () => {
   if (state.status === 'authenticated' && !state.bootstrap.user.isSuperAdmin &&
     state.bootstrap.user.companyGrants?.length === 0 && state.bootstrap.companies.length === 0) {
     return <AuthCard eyebrow="Employee access" title="Awaiting access" intro="Your account is ready. Your super admin will assign the companies and forms you can use.">
+      <EmailChangeForm request={(email, password) => repository.requestEmailChange(email, password)} />
       <div className="flex flex-wrap items-center gap-4">
         <MorphButton type="button" variant="primary" state="idle" onClick={() => void session.restore()}>Check access</MorphButton>
         <button type="button" className="preci-link" onClick={() => void session.logout()}>Sign out</button>
