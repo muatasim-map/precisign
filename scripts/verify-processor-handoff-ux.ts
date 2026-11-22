@@ -83,7 +83,7 @@ async function start() {
   worker = (api as unknown as { outboxProcessor: OutboxProcessor }).outboxProcessor;
   site.use((req, res, next) => req.path.startsWith('/api/') ? api(req, res, next) : next());
   site.use(express.static(build));
-  site.get('*', (_req, res) => res.sendFile(join(build, 'index.html')));
+  site.get(/^\//, (_req, res) => res.sendFile(join(build, 'index.html')));
 }
 async function stop() {
   worker?.stop();

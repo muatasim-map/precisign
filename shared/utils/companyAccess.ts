@@ -59,6 +59,10 @@ export function hasSigningRights(user: UserProfile, companies: readonly CompanyI
 }
 
 export function canUserStartForm(user: UserProfile, companyId: CompanyId, formType: string): boolean {
+  const submission = user.routeRights?.[companyId]?.submission;
+  if (submission !== undefined) {
+    return canUserAccessCompany(user, companyId) && submission !== false && !submission.excludedForms.includes(formType);
+  }
   return hasCompanyPermission(user, companyId, 'requester', true)
     && (user.companyGrants === undefined || user.formGrants?.[companyId]?.includes(formType) === true);
 }

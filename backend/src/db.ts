@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 
-export const schemaVersion = 16;
+export const schemaVersion = 17;
 
 function readSchemaVersion(db: DatabaseSync) {
   const version = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
@@ -196,6 +196,10 @@ function migrate(db: Pick<DatabaseSync, 'exec'>, version: number) {
     DELETE FROM account_email_pending WHERE user_id=NEW.id;
   END;`);
   }
+  if (version < 17) db.exec(`CREATE TABLE IF NOT EXISTS user_display_profiles (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    display_department TEXT NOT NULL, photo_data_url TEXT
+  );`);
   if (version < schemaVersion) db.exec(`PRAGMA user_version = ${schemaVersion};`);
 }
 

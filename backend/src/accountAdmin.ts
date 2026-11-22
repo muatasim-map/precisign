@@ -203,10 +203,18 @@ export function accountAdminRoutes(db: DatabaseSync | AsyncDatabase, origin: str
       if (routeRights !== undefined) {
         fields(routeRights, companyIds);
         for (const rights of Object.values(routeRights) as Record<string, unknown>[]) {
-          fields(rights, ['companyAdmin', 'signerSteps', 'processorTasks']);
+          fields(rights, ['companyAdmin', 'signerSteps', 'processorTasks', 'submission']);
           if (rights.companyAdmin !== undefined && typeof rights.companyAdmin !== 'boolean') throw new RequestError(400, 'Invalid company admin grant.');
           for (const [kind, scoped] of Object.entries(rights)) {
             if (kind === 'companyAdmin') continue;
+            if (kind === 'submission') {
+              if (scoped === false) continue;
+              fields(scoped, ['excludedForms']);
+              const { excludedForms } = scoped as { excludedForms?: unknown };
+              if (!Array.isArray(excludedForms) || excludedForms.some(form => !forms.includes(form)) ||
+                new Set(excludedForms).size !== excludedForms.length) throw new RequestError(400, 'Invalid form exceptions.');
+              continue;
+            }
             fields(scoped, forms);
             for (const [form, ids] of Object.entries(scoped as Record<string, unknown>)) {
               if (!Array.isArray(ids) || ids.length > 20 || new Set(ids).size !== ids.length

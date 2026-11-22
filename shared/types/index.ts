@@ -41,6 +41,7 @@ export interface CompanyRoleAssignment {
 
 export interface RouteAccessRights {
   companyAdmin?: boolean;
+  submission?: false | { excludedForms: string[] };
   signerSteps?: Record<string, string[]>;
   processorTasks?: Record<string, string[]>;
 }

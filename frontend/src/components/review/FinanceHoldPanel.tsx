@@ -61,7 +61,7 @@ export function FinanceHoldPanel({ request, onDownload }: { request: RequestReco
         {action === 'evidence' && <label className="block">Follow-up evidence
           <input className="block w-full" type="file" required accept="application/pdf,image/png,image/jpeg" onChange={event => setFile(event.target.files?.[0])} />
         </label>}
-        <button className="rounded border px-3 py-2 font-semibold" disabled={busy || !note.trim()}>
+        <button type="submit" className="rounded border px-3 py-2 font-semibold" disabled={busy || !note.trim()}>
           {action === 'hold' ? 'Put on hold' : action === 'resume' ? 'Resume processing' : 'Send evidence'}
         </button>
         {action === 'resume' && canRecordFinanceHold(request, currentUser, 'correction') && (

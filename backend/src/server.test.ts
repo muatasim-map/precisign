@@ -40,18 +40,41 @@ test('a signed-out super admin can recover through their registered email', asyn
     assert.deepEqual(await missing.json(), response);
     assert.deepEqual(await regular.json(), response);
     assert.equal(db.prepare('SELECT user_id FROM password_resets WHERE user_id=?').get(regularId), undefined);
-    assert.equal(transport.sent.length, 1);
-    assert.equal(transport.sent[0].to, account.email);
-    const token = transport.sent[0].text?.match(/#reset=([a-f0-9]{64})/)?.[1];
+    assert.equal(transport.sent.length, 2);
+    const review = transport.sent.find(message => message.subject === 'PreciSign password reset request');
+    assert.equal(review?.to, account.email);
+    assert.ok(review?.text?.includes(`/settings/users?account=${encodeURIComponent(regularId)}`));
+    assert.doesNotMatch(review.text!, /#reset=/);
+    const selfReset = transport.sent.find(message => message.subject === 'Reset your PreciSign password');
+    assert.equal(selfReset?.to, account.email);
+    const token = selfReset?.text?.match(/#reset=([a-f0-9]{64})/)?.[1];
     assert.ok(token);
     await post('/auth/forgot-password', { email: account.email });
-    assert.equal(transport.sent.length, 1);
+    assert.equal(transport.sent.length, 2);
     const newPassword = 'New-synthetic-password-123';
     assert.equal((await post('/auth/reset-password', { token, newPassword })).status, 204);
     assert.equal((await post('/auth/reset-password', { token, newPassword })).status, 400);
     const login = await post('/auth/login', { email: account.email, password: newPassword });
     assert.equal(login.status, 200);
     assert.equal((await login.json()).user.isSuperAdmin, true);
+
+    const employeeLogin = await post('/auth/login', { email: regularEmail, password });
+    const cookie = employeeLogin.headers.get('set-cookie')!.split(';')[0];
+    const profileHeaders = { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' };
+    const updated = await fetch(base + '/me/display-profile', {
+      method: 'PUT', headers: profileHeaders, body: JSON.stringify({ department: 'Operations Support', photo: null }),
+    });
+    assert.equal(updated.status, 200);
+    const profile = await fetch(base + '/me/display-profile', { headers: profileHeaders });
+    assert.deepEqual(await profile.json(), { department: 'Operations Support', photo: null });
+    assert.equal(db.prepare('SELECT department FROM users WHERE id=?').get(regularId)?.department, account.department);
+    const nameRequest = await fetch(base + '/me/name-request', {
+      method: 'POST', headers: profileHeaders, body: JSON.stringify({ name: 'Updated Display Name' }),
+    });
+    assert.equal(nameRequest.status, 204);
+    assert.equal(transport.sent.at(-1)?.to, account.email);
+    assert.match(transport.sent.at(-1)?.text ?? '', /Updated Display Name/);
+    assert.equal(db.prepare('SELECT name FROM users WHERE id=?').get(regularId)?.name, account.name);
   } finally {
     server.closeAllConnections();
     await new Promise<void>(resolve => server.close(() => resolve()));

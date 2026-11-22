@@ -69,9 +69,9 @@ test('super-admin directory preserves identity, revokes sessions, and clears acc
     assert.equal((await create(admin, createEmail.toUpperCase())).status, 409);
     const userSession = { headers: { Cookie: user } };
     const bootstrap = new URL('/api/bootstrap', base);
-    const changeGrants = (forms: string[]) => fetch(`${base}/${userId}/grants`, {
+    const changeGrants = (forms: string[], submission?: unknown) => fetch(`${base}/${userId}/grants`, {
       method: 'PUT', headers: { Cookie: admin, Origin: origin, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ companyIds: ['PEW'], formsByCompany: { PEW: forms } }),
+      body: JSON.stringify({ companyIds: ['PEW'], formsByCompany: { PEW: forms }, routeRights: submission === undefined ? undefined : { PEW: { submission } } }),
     });
     const before = await (await fetch(bootstrap, userSession)).json();
     assert.deepEqual(before.user.formGrants.PEW, ['IT Request']);
@@ -82,6 +82,12 @@ test('super-admin directory preserves identity, revokes sessions, and clears acc
     const removed = await (await fetch(bootstrap, userSession)).json();
     assert.deepEqual(removed.user.formGrants.PEW ?? [], []);
     const draft = `http://127.0.0.1:${(server.address() as { port: number }).port}/api/drafts/PEW/Admin%20Work%20Request`;
+    assert.equal((await fetch(draft, userSession)).status, 403);
+    assert.equal((await changeGrants([], { excludedForms: [] })).status, 204);
+    assert.equal((await fetch(draft, userSession)).status, 200);
+    assert.equal((await changeGrants([], { excludedForms: ['Admin Work Request'] })).status, 204);
+    assert.equal((await fetch(draft, userSession)).status, 403);
+    assert.equal((await changeGrants([], false)).status, 204);
     assert.equal((await fetch(draft, userSession)).status, 403);
     const submit = `http://127.0.0.1:${(server.address() as { port: number }).port}/api/requests`;
     assert.equal((await fetch(submit, { method: 'POST', headers: { Cookie: user, Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: 'PEW', formType: 'Cash Voucher' }) })).status, 403);

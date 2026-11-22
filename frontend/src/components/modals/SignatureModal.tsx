@@ -383,10 +383,11 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
           {tab === 'saved' && user.signatureDataUrl && <div className="rounded-lg border border-workspace-line bg-workspace p-4"><p className="mb-3 text-xs font-medium">Your saved signature</p><img src={user.signatureDataUrl} alt={`Saved signature for ${user.name}`} className="mx-auto h-20 max-w-full object-contain" /></div>}
           {tab === 'style' && (
             <div className="space-y-3">
-              <label className="block text-xs font-medium text-slate-700">
+              <label htmlFor="signature-styled-name" className="block text-xs font-medium text-slate-700">
                 Signed-in name on official document:
               </label>
               <EditorInput
+                id="signature-styled-name"
                 type="text"
                 value={styledName}
                 readOnly

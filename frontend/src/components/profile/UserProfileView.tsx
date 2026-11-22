@@ -8,6 +8,8 @@ import { ActionButton, EditorInput, EditorSelect, FormField } from '../create/Re
 
 import { SignatureCropEditor } from './SignatureCropEditor';
 import { WorkspaceDialog } from '../common/WorkspaceDialog';
+import type { ApiPreciSignRepository } from '../../services/apiRepository';
+import { ProfileDetails } from './ProfileDetails';
 
 export function EmailChangeForm({ request }: { request: (email: string, password: string) => Promise<void> }) {
   const [email, setEmail] = useState('');
@@ -45,7 +47,7 @@ export function EmailChangeForm({ request }: { request: (email: string, password
   );
 }
 
-export const UserProfileView: React.FC = () => {
+export const UserProfileView: React.FC<{ repository?: ApiPreciSignRepository }> = ({ repository }) => {
   const { currentUser, requestEmailChange, updateUserSignature, users, setCurrentUserId, readOnly: connected, signatureReturn, openReviewRequest } = useApp();
 
   const [activeTab, setActiveTab] = useState<'draw' | 'upload'>('upload');
@@ -172,7 +174,7 @@ export const UserProfileView: React.FC = () => {
 
   return (
     <section className="settings-page space-y-6" aria-labelledby="profile-title">
-      <PageHeader motif="signature" eyebrow="Signature & profile" title="My profile" headingId="profile-title" subtitle="Manage the signature you use on requests." />
+      <PageHeader motif="signature" eyebrow="Account" title="My Profile" headingId="profile-title" subtitle="Manage your profile, sign-in details, and saved signature." />
 
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
         <aside className="workspace-panel min-w-0 space-y-5 p-5">
@@ -192,10 +194,10 @@ export const UserProfileView: React.FC = () => {
 
 
           <dl className="space-y-3 border-t border-workspace-line pt-4 text-sm">
-            <div>
+            {!repository && <div>
               <dt className="text-xs font-medium text-workspace-muted">Department</dt>
               <dd className="mt-0.5 break-words text-workspace-ink">{currentUser.department}</dd>
-            </div>
+            </div>}
             <div>
               <dt className="text-xs font-medium text-workspace-muted">Email</dt>
               <dd className="mt-0.5 [overflow-wrap:anywhere] text-workspace-ink">{currentUser.email}</dd>
@@ -203,6 +205,7 @@ export const UserProfileView: React.FC = () => {
           </dl>
 
           {requestEmailChange && <EmailChangeForm key={currentUser.id} request={requestEmailChange} />}
+          {repository && <ProfileDetails key={currentUser.id} repository={repository} name={currentUser.name} email={currentUser.email} />}
 
           {!connected && (
             <FormField id="profile-persona" label="Demo persona">

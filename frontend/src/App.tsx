@@ -11,7 +11,7 @@ import { DashboardView } from './components/dashboard/DashboardView';
 import { CreateRequestView } from './components/create/CreateRequestView';
 import { ReviewSignView } from './components/review/ReviewSignView';
 import { WorkflowSettingsView } from './components/settings/WorkflowSettingsView';
-import { EmailChangeForm, UserProfileView } from './components/profile/UserProfileView';
+import { UserProfileView } from './components/profile/UserProfileView';
 import { companyForms, FormsLibraryView } from './components/library/FormsLibraryView';
 import { ArchiveRegisterView } from './components/archive/ArchiveRegisterView';
 import { ApiPreciSignRepository } from './services/apiRepository';
@@ -28,6 +28,7 @@ import { Building2, Check, Mail, PenLine, UserRound, ArrowRight } from 'lucide-r
 import { AuthLayout } from './components/layout/AuthLayout';
 import { Router, Route, Switch, Redirect, useLocation, Link } from 'wouter';
 import { PageTitle } from './navigation/PageTitle';
+import { parsePageRoute } from './navigation/pageRoutes';
 import { ScrollToTop } from './navigation/ScrollToTop';
 import { ProtectedRoute } from './components/common/ProtectedRoute';
 import { NotFoundPage } from './components/common/NotFoundPage';
@@ -80,7 +81,9 @@ const RequestDetailRoute: React.FC<{ id: string }> = ({ id }) => {
   return <ReviewSignView key={`${currentUser.id}:${selectedScope}:${id || selectedRequestId}`} />;
 };
 
-const MainLayout: React.FC<{ repository?: ApiPreciSignRepository; onSignOut?: () => void }> = ({ repository, onSignOut }) => {
+type WorkspaceProps = { repository?: ApiPreciSignRepository; onSignOut?: () => void; continueTo?: string; onContinue?: () => void };
+
+const MainLayout: React.FC<WorkspaceProps> = ({ repository, onSignOut, continueTo, onContinue }) => {
   const {
     navigationPrompt,
     currentUser,
@@ -97,7 +100,7 @@ const MainLayout: React.FC<{ repository?: ApiPreciSignRepository; onSignOut?: ()
   const administration = React.useMemo(() => repository ?? (isShowcaseBuild ? new ShowcaseAdministration(currentUser.id) : undefined), [repository, currentUser.id]);
   const canOpenDirectory = Boolean(administration && currentUser.isSuperAdmin);
   const [sidebarHidden, setSidebarHidden] = React.useState(false);
-  const awaitingAccess = readOnly && companies.length === 0;
+  const awaitingAccess = readOnly && companies.length === 0 && !currentUser.isSuperAdmin;
   const revealSidebar = React.useCallback(() => setSidebarHidden(false), []);
   useProductTour({ awaitingAccess, canOpenDirectory, revealSidebar });
 
@@ -154,7 +157,15 @@ const MainLayout: React.FC<{ repository?: ApiPreciSignRepository; onSignOut?: ()
         <AppHeader onSignOut={onSignOut} sidebarHidden={sidebarHidden} onToggleSidebar={() => setSidebarHidden(value => !value)} />
         {isShowcaseBuild && <ShowcaseBar />}
         <main className="flex-1 pb-16">
-          {awaitingAccess ? (
+          {continueTo && !awaitingAccess && location === '/dashboard' && (
+            <div className="workspace-panel mx-4 mt-5 flex flex-wrap items-center justify-between gap-3 p-4 sm:mx-6">
+              <p className="text-sm text-workspace-muted">You opened a link to a {continueTo.startsWith('/requests/') ? 'request' : 'directory account'} before signing in.</p>
+              <Link href={continueTo} onClick={onContinue} className="workspace-control preci-press px-3 py-2 text-sm font-semibold">
+                {continueTo.startsWith('/requests/') ? 'Continue to request' : 'Open User Directory'}
+              </Link>
+            </div>
+          )}
+          {awaitingAccess && location !== '/settings/profile' ? (
             <section className="workspace-panel mx-4 my-6 max-w-xl space-y-3 p-6 sm:mx-6">
               <span className="grid size-12 place-items-center rounded-xl bg-workspace-tint text-workspace-teal">
                 <Building2 aria-hidden="true" />
@@ -162,7 +173,7 @@ const MainLayout: React.FC<{ repository?: ApiPreciSignRepository; onSignOut?: ()
               <h1 className="text-2xl font-bold">Welcome, {currentUser.name}</h1>
               <p className="text-sm text-workspace-muted">You haven’t been assigned a company yet. Ask your account administrator for access.</p>
               <Link href="/settings/profile" className="workspace-control preci-press inline-flex min-h-10 items-center px-3 text-sm font-semibold">
-                Set up your signature
+                Open My Profile
               </Link>
             </section>
           ) : (
@@ -172,7 +183,10 @@ const MainLayout: React.FC<{ repository?: ApiPreciSignRepository; onSignOut?: ()
                 <Route path="/dashboard" component={DashboardView} />
                 <Route path="/requests" component={DashboardView} />
                 <Route path="/requests/:id">
-                  {params => <RequestDetailRoute id={decodeURIComponent(params.id)} />}
+                  {() => {
+                    const { requestId } = parsePageRoute(location);
+                    return requestId ? <RequestDetailRoute id={requestId} /> : <NotFoundPage />;
+                  }}
                 </Route>
                 <Route path="/forms">
                   <FormsLibraryView />
@@ -191,7 +205,7 @@ const MainLayout: React.FC<{ repository?: ApiPreciSignRepository; onSignOut?: ()
                 <Route path="/settings">
                   <Redirect to="/settings/profile" replace />
                 </Route>
-                <Route path="/settings/profile" component={UserProfileView} />
+                <Route path="/settings/profile"><UserProfileView repository={repository} /></Route>
                 <ProtectedRoute
                   path="/settings/signing-routes"
                   isAllowed={canConfigureSigningRoutes(currentUser) || (!repository && !isShowcaseBuild)}
@@ -235,17 +249,25 @@ const MainLayout: React.FC<{ repository?: ApiPreciSignRepository; onSignOut?: ()
   );
 };
 
-const RoutedMainLayout: React.FC<{ repository?: ApiPreciSignRepository; onSignOut?: () => void }> = ({ repository, onSignOut }) => {
+const RoutedMainLayout: React.FC<WorkspaceProps> = (props) => {
   const { locationHook } = useApp();
   return (
     <Router hook={locationHook}>
-      <MainLayout repository={repository} onSignOut={onSignOut} />
+      <MainLayout {...props} />
     </Router>
   );
 };
 
 const ApiApp: React.FC = () => {
   const [state, setState] = React.useState<SessionState>({ status: 'loading' });
+  const [continueTo, setContinueTo] = React.useState<string>();
+  const landOnDashboard = () => {
+    const { pathname, search } = window.location;
+    const isRequest = /^\/requests\/[^/]+$/.test(pathname);
+    const isAccount = pathname === '/settings/users' && new URLSearchParams(search).has('account');
+    setContinueTo(isRequest || isAccount ? pathname + search : undefined);
+    window.history.replaceState(window.history.state, '', '/dashboard');
+  };
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [signup, setSignup] = React.useState(false);
@@ -355,23 +377,13 @@ const ApiApp: React.FC = () => {
       <button type="button" className="preci-link" onClick={() => setResetToken('')}>Back to sign in</button>
     </form>
   </AuthCard>;
-  if (state.status === 'authenticated' && !state.bootstrap.user.isSuperAdmin &&
-    state.bootstrap.user.companyGrants?.length === 0 && state.bootstrap.companies.length === 0) {
-    return <AuthCard eyebrow="Employee access" title="Awaiting access" intro="Your account is ready. Your super admin will assign the companies and forms you can use.">
-      <EmailChangeForm request={(email, password) => repository.requestEmailChange(email, password)} />
-      <div className="flex flex-wrap items-center gap-4">
-        <MorphButton type="button" variant="primary" state="idle" onClick={() => void session.restore()}>Check access</MorphButton>
-        <button type="button" className="preci-link" onClick={() => void session.logout()}>Sign out</button>
-      </div>
-    </AuthCard>;
-  }
   if (state.status === 'authenticated') return <AppProvider apiData={state} apiRepository={repository}>
     {connectionError && <p role="alert" className="px-6 py-2 text-xs text-rose-700">{connectionError}</p>}
     {minutesLeft !== null && !expired && <div role="status" className="session-warning no-print">
       <span className="min-w-0 flex-1">Your session ends in {minutesLeft} minute{minutesLeft === 1 ? '' : 's'}. Save your work.</span>
       <button type="button" className="workspace-control preci-press min-h-9 px-3 text-xs font-semibold text-slate-800" onClick={() => setExpired(true)}>Sign in again</button>
     </div>}
-    <div hidden={expired} inert={expired}><RoutedMainLayout repository={repository} onSignOut={() => { setPassword(''); void session.logout(); }} /></div>
+    <div hidden={expired} inert={expired}><RoutedMainLayout repository={repository} continueTo={continueTo} onContinue={() => setContinueTo(undefined)} onSignOut={() => { setContinueTo(undefined); setPassword(''); void session.logout(); }} /></div>
     {expired && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-6"><form className="auth-card w-full space-y-4 rounded-2xl bg-white p-6 shadow-xl" onSubmit={async event => {
       event.preventDefault(); if (reauthBusy) return; setReauthBusy(true);
       try {
@@ -421,7 +433,7 @@ const ApiApp: React.FC = () => {
     if (!signup) {
       if (loginBusy) return;
       setLoginBusy(true);
-      try { await session.login(email, password); }
+      try { await session.login(email, password, landOnDashboard); }
       finally { setPassword(''); setLoginBusy(false); }
       return;
     }
@@ -432,7 +444,7 @@ const ApiApp: React.FC = () => {
       await repository.signup({ name, email, department, jobTitle: suggestedJobTitle.trim() || undefined, password, signatureDataUrl });
       setSignup(false);
       setPassword('');
-      await session.login(email, password);
+      await session.login(email, password, landOnDashboard);
     } catch (error) {
       setSignupError(error instanceof ApiError && error.status === 409
         ? 'Could not create this account. If you already registered, try signing in.'
@@ -464,18 +476,18 @@ const ApiApp: React.FC = () => {
         {!signup && <button className="preci-link mt-2" type="button" aria-expanded={forgot} onClick={() => setForgot(value => !value)}>Forgot password?</button>}
 
         {!signup && forgot && <div className="mt-2 space-y-2 rounded-lg bg-workspace p-3 text-sm text-workspace-muted">
-          <p>Super admins can request a reset by email. For other accounts, contact your super admin for a private reset link.</p>
+          <p>Enter your sign-in email. A super admin will review employee requests. Super admins receive their own reset link by email.</p>
           <button type="button" className="preci-link" disabled={resetRequestBusy || !email.trim()} onClick={async () => {
             setResetRequestBusy(true);
             try {
               await repository.requestPasswordReset(email);
-              setResetMessage('If this email belongs to an active super admin, check your inbox for a reset link.');
+              setResetMessage('If this email matches an active account, PreciSign will start the recovery process.');
             } catch {
               setResetMessage('Could not request a reset link. Please try again shortly.');
             } finally {
               setResetRequestBusy(false);
             }
-          }}>{resetRequestBusy ? 'Requesting…' : 'Send super admin reset link'}</button>
+          }}>{resetRequestBusy ? 'Requesting…' : 'Request password reset'}</button>
         </div>}
       </div>
       {signup && <div className="rounded-lg border border-workspace-line bg-workspace/50 p-3">

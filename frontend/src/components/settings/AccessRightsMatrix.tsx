@@ -7,10 +7,10 @@ import type { CompanyId, RouteAccessRights, UserProfile, WorkflowConfig } from '
 const companies = ['PEW', 'ICCL', 'FSG'] as const;
 const formsInDisplayOrder = [...SUBMITTABLE_FORMS.slice(1), SUBMITTABLE_FORMS[0]];
 
-export function AccessRightsMatrix({ grants, forms, rights, permissions, workflows, legacy, onCompany, onSubmit, onRights }: {
+export function AccessRightsMatrix({ grants, forms, rights, permissions, workflows, onCompany, onSubmit, onRights }: {
   grants: CompanyId[]; forms: Partial<Record<CompanyId, string[]>>; rights: NonNullable<UserProfile['routeRights']>;
-  permissions?: UserProfile['companyPermissions']; workflows: WorkflowConfig[]; legacy: boolean;
-  onCompany: (id: CompanyId, enabled: boolean) => void;
+  permissions?: UserProfile['companyPermissions']; workflows: WorkflowConfig[];
+  onCompany: (id: CompanyId, mode: 'none' | 'view' | 'submit') => void;
   onSubmit: (id: CompanyId, form: string, enabled: boolean) => void;
   onRights: (id: CompanyId, rights: RouteAccessRights) => void;
 }) {
@@ -24,10 +24,16 @@ export function AccessRightsMatrix({ grants, forms, rights, permissions, workflo
   const toggle = (items: string[], id: string, enabled: boolean) => enabled ? [...items, id] : items.filter(item => item !== id);
   // Plain summary of overlapping responsibilities in one company, from the same draft values the cells edit.
   const plural = (count: number) => count + (count === 1 ? ' form' : ' forms');
+  const maySubmitIn = (id: CompanyId) => rights[id]?.submission !== undefined
+    ? rights[id].submission !== false
+    : permissions?.[id]?.includes('requester') ?? true;
+  const canStart = (id: CompanyId, form: string) => {
+    const submission = rights[id]?.submission;
+    return submission ? !submission.excludedForms.includes(form) : maySubmitIn(id) && (forms[id]?.includes(form) ?? false);
+  };
   const summary = (id: CompanyId) => {
     const grant = rights[id] ?? {};
-    const maySubmit = permissions?.[id]?.includes('requester') ?? true;
-    const starts = maySubmit ? forms[id]?.length ?? 0 : 0;
+    const starts = SUBMITTABLE_FORMS.filter(form => canStart(id, form)).length;
     const maySign = permissions?.[id]?.includes('approver') ?? true;
     const chosen = SUBMITTABLE_FORMS.filter(form => (grant.signerSteps?.[form]?.length ?? 0) > 0).length;
     const byRules = SUBMITTABLE_FORMS.filter(form => grant.signerSteps?.[form] === undefined).length;
@@ -60,8 +66,16 @@ export function AccessRightsMatrix({ grants, forms, rights, permissions, workflo
         </thead>
         <tbody className="divide-y divide-slate-200">
           <tr><th scope="row" className="p-3">Company access</th>{companies.map(id => <td key={id} className={'p-3 ' + columnClass(id)}>
-            <label className="flex min-h-10 items-center gap-2"><input type="checkbox" checked={grants.includes(id)} onChange={event => onCompany(id, event.target.checked)} />
-              {grants.includes(id) ? (legacy ? 'Legacy access' : 'Granted') : 'No access'}</label>
+            <select aria-label={id + ' access'} className="workspace-control min-h-10 w-full px-2"
+              value={!grants.includes(id) ? 'none' : rights[id]?.submission || SUBMITTABLE_FORMS.some(form => canStart(id, form)) ? 'submit' : 'view'}
+              onChange={event => onCompany(id, event.target.value as 'none' | 'view' | 'submit')}>
+              <option value="none">No access</option>
+              <option value="submit">Can submit</option>
+              <option value="view">View only</option>
+            </select>
+            {grants.includes(id) && rights[id]?.submission !== false &&
+              (rights[id]?.submission === undefined || rights[id].submission.excludedForms.length > 0) &&
+              <button type="button" className="preci-link mt-1 min-h-9" onClick={() => onCompany(id, 'submit')}>Enable all forms</button>}
           </td>)}</tr>
           <tr><th scope="row" className="p-3">Company Admin</th>{companies.map(id => <td key={id} className={'p-3 ' + columnClass(id)}>
             {grants.includes(id) ? <label className="flex min-h-10 items-center gap-2">
@@ -89,7 +103,7 @@ export function AccessRightsMatrix({ grants, forms, rights, permissions, workflo
             if (!openForms.has(form)) return <tr key={form}>
               <th scope="row" className="break-words p-3 align-top"><span className="access-sticky-row">{form}</span></th>
               <td colSpan={companies.length} className="p-3 text-workspace-muted">
-                <span className="me-2">Nothing set for this person.</span>
+                <span className="me-2">Form exceptions and route permissions</span>
                 <button type="button" aria-expanded="false" className="preci-link min-h-9 text-xs" onClick={() => setOpenForms(current => new Set(current).add(form))}>Show settings</button>
               </td>
             </tr>;
@@ -101,7 +115,7 @@ export function AccessRightsMatrix({ grants, forms, rights, permissions, workflo
               const signerIds = grant.signerSteps?.[form];
               const taskIds = grant.processorTasks?.[form] ?? [];
               const maySign = permissions?.[id]?.includes('approver') ?? true;
-              const maySubmit = permissions?.[id]?.includes('requester') ?? true;
+              const maySubmit = maySubmitIn(id);
               const setSignerIds = (values?: string[]) => {
                 const signerSteps = { ...grant.signerSteps };
                 if (values) signerSteps[form] = values;
@@ -111,8 +125,8 @@ export function AccessRightsMatrix({ grants, forms, rights, permissions, workflo
               return <td key={id} className={'space-y-2 p-2 align-top md:p-3 ' + columnClass(id)}>
                 {grants.includes(id) ? <>
                   <label className="flex min-h-10 items-center gap-2">
-                    <input type="checkbox" disabled={!maySubmit} checked={maySubmit && (forms[id]?.includes(form) ?? false)} onChange={event => onSubmit(id, form, event.target.checked)} />
-                    {maySubmit ? 'Can start this form' : 'Starting restricted by company role'}
+                    <input type="checkbox" disabled={!maySubmit} checked={canStart(id, form)} onChange={event => onSubmit(id, form, event.target.checked)} />
+                    {maySubmit ? 'Can start this form' : 'Select Can submit to allow starting forms'}
                   </label>
                   <details className="handoff-disclosure rounded-md bg-slate-50 p-2">
                     <summary className="leading-5"><span>Can be chosen as signer<span className="block text-workspace-muted">{!maySign ? 'Restricted by company role' : signerIds === undefined ? 'Follows company rules' : signerIds.length ? ('Limited to ' + signerIds.length + (signerIds.length === 1 ? ' step' : ' steps')) : 'Not offered'}</span></span></summary>

@@ -17,10 +17,13 @@ export class ApiSession {
   private generation = 0;
   constructor(private repository: Pick<ApiPreciSignRepository, 'getCurrentUser' | 'login' | 'logout' | 'bootstrap' | 'getRequests'>, private changed: (state: SessionState) => void = () => {}) {}
   private set(state: SessionState) { this.state = state; this.changed(state); }
-  private async load(generation: number) {
+  private async load(generation: number, beforeWorkspace?: () => void) {
     const bootstrap = await this.repository.bootstrap();
     const requests = await this.repository.getRequests();
-    if (generation === this.generation) this.set({ status: 'authenticated', bootstrap, requests });
+    if (generation === this.generation) {
+      beforeWorkspace?.();
+      this.set({ status: 'authenticated', bootstrap, requests });
+    }
   }
   async restore() {
     const generation = ++this.generation; this.set({ status: 'loading' });
@@ -34,12 +37,12 @@ export class ApiSession {
       if (generation === this.generation) this.set(error instanceof ApiError && error.status === 401 ? { status: 'anonymous' } : { status: 'failed', error: 'Could not load the server. Please retry.' });
     }
   }
-  async login(email: string, password: string) {
+  async login(email: string, password: string, beforeWorkspace?: () => void) {
     const generation = ++this.generation; this.set({ status: 'loading' });
     try {
       const user = await this.repository.login(email, password);
       if (user.mustChangePassword) { if (generation === this.generation) this.set({ status: 'password-change', user }); return; }
-      await this.load(generation);
+      await this.load(generation, beforeWorkspace);
     }
     catch (error) {
       captureFrontendError(error, { flow: 'sign-in' });

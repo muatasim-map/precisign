@@ -3,6 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { bytes, fields, text } from './requestValidation';
 import { transaction } from './db';
 import type { AsyncDatabase, AsyncQueryConnection } from './asyncDatabase';
+import sharp from 'sharp';
 
 export async function ownSignatureAsync(db: AsyncQueryConnection, userId: string) {
   const result = await db.execute('SELECT signature_data_url,signature_style_text FROM user_signatures WHERE user_id=?', [userId]);
@@ -27,6 +28,27 @@ export function ownSignature(db: DatabaseSync, userId: string) {
 
 export function profileRoutes(db: DatabaseSync | AsyncDatabase) {
   const router = Router();
+  router.get('/me/display-profile', async (_req, res, next) => {
+    try {
+      const sql = 'SELECT display_department, photo_data_url FROM user_display_profiles WHERE user_id=?';
+      const id = res.locals.user.id;
+      const row = 'prepare' in db ? db.prepare(sql).get(id) : (await db.execute(sql, [id])).rows[0];
+      res.json({ department: row?.display_department ?? res.locals.user.department ?? '', photo: row?.photo_data_url ?? null });
+    } catch (error) { next(error); }
+  });
+  router.put('/me/display-profile', async (req, res, next) => {
+    try {
+      fields(req.body, ['department', 'photo']);
+      const department = text(req.body.department, 100, false).trim();
+      const image = req.body.photo === null ? null : await bytes(req.body.photo, true);
+      const photo = image ? `data:image/jpeg;base64,${(await sharp(image).rotate().resize(320, 320, { fit: 'cover' }).jpeg({ quality: 86 }).toBuffer()).toString('base64')}` : null;
+      const sql = `INSERT INTO user_display_profiles (user_id,display_department,photo_data_url) VALUES (?,?,?)
+        ON CONFLICT(user_id) DO UPDATE SET display_department=excluded.display_department,photo_data_url=excluded.photo_data_url`;
+      if ('prepare' in db) transaction(db, () => db.prepare(sql).run(res.locals.requireCurrentUser().id, department, photo));
+      else await db.transaction(async tx => tx.execute(sql, [(await res.locals.requireCurrentUserAsync(tx)).id, department, photo]));
+      res.json({ department, photo });
+    } catch (error) { next(error); }
+  });
   router.patch('/me/name', (_req, res) => {
     res.status(403).json({ error: 'Saved names are managed by super admins in User directory.' });
   });

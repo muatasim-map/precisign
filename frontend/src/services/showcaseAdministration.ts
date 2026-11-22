@@ -1,4 +1,4 @@
-import { LocalStoragePreciSignRepository, type AccountDirectoryEntry, type IAccountAdministrationRepository, type StaffRole } from './repository';
+import { LocalStoragePreciSignRepository, type AccountDirectoryEntry, type AccountRouteAccessUpdate, type IAccountAdministrationRepository, type StaffRole } from './repository';
 import type { CompanyId, UserProfile } from '../types';
 import type { DemoDataset } from '../data/showcaseData';
 import { activeDemoDataset } from '../data/demoDataset';
@@ -40,7 +40,7 @@ export class ShowcaseAdministration extends LocalStoragePreciSignRepository impl
     if (update.isDisabled !== undefined) { target.isDisabled = update.isDisabled; if (update.isDisabled) { target.companyGrants = []; target.formGrants = {}; } }
     this.saveProfiles(profiles);
   }
-  async updateGrants(id: string, companyIds: CompanyId[], formsByCompany: Partial<Record<CompanyId, string[]>>) {
+  async updateGrants(id: string, companyIds: CompanyId[], formsByCompany: Partial<Record<CompanyId, string[]>>, access?: AccountRouteAccessUpdate) {
     this.requireAdmin();
     const profiles = this.profiles(); const target = profiles.find(user => user.id === id);
     if (!target || target.isDisabled) throw new ApiError(400, 'Enable this demo employee before assigning access.');
@@ -49,6 +49,7 @@ export class ShowcaseAdministration extends LocalStoragePreciSignRepository impl
     if (new Set(companyIds).size !== companyIds.length || companyIds.some(id => !validCompanies.includes(id))
       || Object.entries(formsByCompany).some(([id, forms]) => !companyIds.includes(id as CompanyId) || forms.some(form => !validForms.has(form)))) throw new ApiError(400, 'Choose supported companies and forms.');
     target.companyGrants = [...companyIds]; target.formGrants = structuredClone(formsByCompany);
+    if (access?.routeRights) target.routeRights = structuredClone(access.routeRights);
     this.saveProfiles(profiles);
   }
   async createResetLink(_id: string): Promise<string> { throw new ApiError(400, 'This showcase uses employee switching, not passwords or recovery links.'); }

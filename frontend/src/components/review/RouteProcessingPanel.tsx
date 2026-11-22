@@ -113,7 +113,7 @@ export function RouteProcessingPanel({ request }: { request: RequestRecord }) {
               {noteLabels[action]}
               <textarea className="mt-1 block w-full rounded-md border border-slate-300 p-2 text-xs font-normal focus:border-teal-600 focus:ring-1 focus:ring-teal-600" maxLength={2000} required value={note} onChange={event => setNote(event.target.value)} />
             </label>
-            <button className="min-h-10 rounded-md bg-[#192B3C] px-3 py-2 text-xs font-semibold text-white transition-colors enabled:hover:bg-[#2A4A62] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#365C78] disabled:opacity-60" disabled={busy || !note.trim()}>
+            <button type="submit" className="min-h-10 rounded-md bg-[#192B3C] px-3 py-2 text-xs font-semibold text-white transition-colors enabled:hover:bg-[#2A4A62] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#365C78] disabled:opacity-60" disabled={busy || !note.trim()}>
               {busy ? 'Saving…' : processingLabels[action]}
             </button>
           </form>
@@ -123,7 +123,7 @@ export function RouteProcessingPanel({ request }: { request: RequestRecord }) {
         <label className="block text-xs font-semibold text-slate-800">Reason for waiving acknowledgment
           <textarea className="mt-1 block w-full rounded-md border border-slate-300 p-2 text-xs font-normal focus:border-teal-600 focus:ring-1 focus:ring-teal-600" maxLength={2000} required value={waiverReason} onChange={event => setWaiverReason(event.target.value)} />
         </label>
-        <button className="rounded border px-3 py-2 text-xs font-semibold" disabled={busy || !waiverReason.trim()}>Waive acknowledgment</button>
+        <button type="submit" className="rounded border px-3 py-2 text-xs font-semibold" disabled={busy || !waiverReason.trim()}>Waive acknowledgment</button>
       </form>}
       {signing && <SignatureModal isOpen onClose={() => setSigning(undefined)} title={processingLabels[signing]} user={currentUser} confirmLabel="Sign & record" onConfirm={signature => save(signing, signature)} />}
       {error && <p role="alert" className="text-xs text-rose-700 font-semibold">{error}</p>}

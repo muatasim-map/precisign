@@ -18,6 +18,7 @@ import type { AsyncDatabase, AsyncQueryConnection } from './asyncDatabase';
 import { ownSignatureAsync } from './profile';
 import { MockEmailTransport, ResendEmailTransport, OutboxProcessor, type IEmailTransport } from './email';
 import { captureBackendError } from './sentry';
+import { escapeHtml } from './email/emailTemplates';
 
 export interface ServerConfig {
   origin: string;
@@ -131,7 +132,7 @@ export async function createApp(db: DatabaseSync | AsyncDatabase, config: Server
   });
   app.post('/api/auth/forgot-password', limitAuthAttempts(false), express.json({ limit: '16kb' }), async (req, res) => {
     const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-    res.status(202).json({ message: 'If this email belongs to an active super admin, check your inbox for a reset link.' });
+    res.status(202).json({ message: 'If this email matches an active account, PreciSign will start the recovery process.' });
     if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return;
     // Sandbox delivers to a substituted address and must never receive reset tokens.
     if (transport instanceof ResendEmailTransport && transport.getMode() !== 'live') return;
@@ -145,6 +146,14 @@ export async function createApp(db: DatabaseSync | AsyncDatabase, config: Server
       WHERE password_resets.expires_at <= ?`;
     const args = [hash, issuedAt + 30 * 60 * 1000, email, issuedAt] as const;
     try {
+      const lookup = 'SELECT id, name, email, is_super_admin FROM account_profiles WHERE lower(email)=? AND coalesce(is_disabled,0)=0';
+      const account = 'prepare' in db ? db.prepare(lookup).get(email) : (await db.execute(lookup, [email])).rows[0];
+      if (!account) return;
+      if (Number(account.is_super_admin) !== 1) {
+        await notifySuperAdmins(String(account.id), 'PreciSign password reset request',
+          `${account.name} (${account.email}) requested a password reset. Open User Directory to review their account and create a private reset link.`);
+        return;
+      }
       const changes = 'prepare' in db ? db.prepare(insert).run(...args).changes : (await db.execute(insert, [...args])).rowsAffected;
       if (!changes) return;
       const link = `${origin}/#reset=${resetToken}`;
@@ -164,6 +173,19 @@ export async function createApp(db: DatabaseSync | AsyncDatabase, config: Server
       console.error('Password reset delivery could not be completed.');
     }
   });
+  async function notifySuperAdmins(accountId: string, subject: string, message: string) {
+    if (transport instanceof ResendEmailTransport && transport.getMode() !== 'live') return false;
+    const sql = 'SELECT email FROM account_profiles WHERE is_super_admin=1 AND coalesce(is_disabled,0)=0 ORDER BY id';
+    const admins = 'prepare' in db ? db.prepare(sql).all() : (await db.execute(sql)).rows;
+    const link = `${origin}/settings/users?account=${encodeURIComponent(accountId)}`;
+    const bucket = Math.floor(now() / (30 * 60 * 1000));
+    const outcomes = await Promise.allSettled(admins.map(({ email }) => transport.send({
+      to: String(email), subject, html: `<p>${escapeHtml(message)}</p><p><a href="${escapeHtml(link)}">Review in User Directory</a></p>`,
+      text: `${message}\n\nReview in User Directory: ${link}`,
+      idempotencyKey: `account-help-${tokenHash(JSON.stringify([accountId, email, subject, message, bucket]))}`,
+    })));
+    return outcomes.some(outcome => outcome.status === 'fulfilled' && outcome.value.accepted);
+  }
   app.post('/api/auth/confirm-email', limitAuthAttempts(false), express.json({ limit: '16kb' }), async (req, res, next) => {
     try {
       await confirmOwnEmailChange(db, req.body, now, transport);
@@ -227,6 +249,18 @@ export async function createApp(db: DatabaseSync | AsyncDatabase, config: Server
   app.post('/api/me/email', limitAuthAttempts(false), async (req, res, next) => {
     try {
       await requestOwnEmailChange(db, res, req.body, origin, now, transport);
+      res.status(204).end();
+    } catch (error) { next(error); }
+  });
+  app.post('/api/me/name-request', limitAuthAttempts(false), async (req, res, next) => {
+    try {
+      fields(req.body, ['name']);
+      const name = text(req.body.name, 150).trim();
+      const actor = res.locals.user;
+      if (name === actor.name) throw new RequestError(400, 'Enter a different name.');
+      const sent = await notifySuperAdmins(actor.id, 'PreciSign name change request',
+        `${actor.name} (${actor.email}) requested the name “${name}”. Review the account before applying the change.`);
+      if (!sent) throw new RequestError(503, 'Could not notify a super admin. Try again later.');
       res.status(204).end();
     } catch (error) { next(error); }
   });

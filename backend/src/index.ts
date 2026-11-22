@@ -61,7 +61,7 @@ if (production) {
     const site = express();
     site.use('/api', (req, res, next) => { req.url = '/api' + req.url; app(req, res, next); });
     site.use(express.static(dist));
-    site.get('*', (_req, res) => res.sendFile(resolve(dist, 'index.html')));
+    site.get(/^\//, (_req, res) => res.sendFile(resolve(dist, 'index.html')));
     const server = site.listen(port, host, () => console.log(`PreciSign listening on http://${host}:${port}`));
     for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, shutdown(server));
   }

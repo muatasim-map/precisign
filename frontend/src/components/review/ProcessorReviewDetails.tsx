@@ -28,7 +28,7 @@ export function ProcessorReviewDetails({ request }: { request: RequestRecord }) 
         return <li key={task.taskId + '/' + id}>
           {name} · {labels[task.taskId]}
           <span className="block tabular-nums text-workspace-muted">{read ? <>Opened <time dateTime={read.at}>{when(read.at)}</time></> : 'Not opened yet'}</span>
-          {canEdit && !hasReadHandoff(request, id) && <button type="button" className="preci-link min-h-8" onClick={() => { setError(''); setAssignment({ taskId: task.taskId, from: id }); }}>Reassign {name}</button>}
+          {canEdit && !hasReadHandoff(request, id) && <button type="button" disabled={pending} className="preci-link min-h-8" onClick={() => { setError(''); setAssignment({ taskId: task.taskId, from: id }); }}>Reassign {name}</button>}
         </li>;
       }))}
     </ul>

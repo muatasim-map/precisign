@@ -38,6 +38,13 @@ import { AccessRolesPanel } from './AccessRolesPanel';
 type Editor = { account: AccountDirectoryEntry; mode: 'access' | 'name' | 'email' | 'status' | 'reset' | 'role' };
 type FormGrants = Partial<Record<CompanyId, string[]>>;
 
+function startableForms(company: CompanyId, forms: FormGrants, rights: UserProfile['routeRights'], permissions: UserProfile['companyPermissions']) {
+  const policy = rights?.[company]?.submission;
+  if (policy === false) return [];
+  if (policy) return SUBMITTABLE_FORMS.filter(form => !policy.excludedForms.includes(form));
+  return permissions?.[company]?.includes('requester') === false ? [] : forms[company] ?? [];
+}
+
 function isAwaitingAccess(account: AccountDirectoryEntry) {
   return !account.isDisabled && !account.isSuperAdmin && !account.isGroupAdmin && account.companyGrants?.length === 0;
 }
@@ -53,7 +60,7 @@ const editorTitles = {
 
 export function AccountDirectoryView({ repository }: { repository: IAccountAdministrationRepository }) {
   const [accounts, setAccounts] = useState<AccountDirectoryEntry[] | null>(null);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(() => new URLSearchParams(window.location.search).get('account') ?? '');
   const [status, setStatus] = useState('all');
   const [loadError, setLoadError] = useState(false);
   const [editor, setEditor] = useState<Editor | null>(null);
@@ -89,7 +96,7 @@ export function AccountDirectoryView({ repository }: { repository: IAccountAdmin
     (status === 'all' || (status === 'awaiting'
       ? isAwaitingAccess(account)
       : status === 'disabled' ? account.isDisabled : !account.isDisabled && !isAwaitingAccess(account))) &&
-    [account.name, account.email, account.department, account.role].some(value =>
+    [account.id, account.name, account.email, account.department, account.role].some(value =>
       value.toLowerCase().includes(term)
     )
   );
@@ -285,8 +292,7 @@ export function AccountDirectoryView({ repository }: { repository: IAccountAdmin
                     <div className="space-y-2">
                       <ul className="flex flex-wrap gap-1.5" aria-label="Companies and startable forms">
                         {account.companyGrants.map(company => {
-                          const chipPermissions = account.companyPermissions?.[company];
-                          const chipCount = (chipPermissions && !chipPermissions.includes('requester') ? [] : account.formGrants?.[company] ?? []).length;
+                          const chipCount = startableForms(company, account.formGrants ?? {}, account.routeRights, account.companyPermissions).length;
                           return (
                             <li key={company} className="access-chip">
                               <span className="access-chip-code">{company}</span>
@@ -300,7 +306,7 @@ export function AccountDirectoryView({ repository }: { repository: IAccountAdmin
                         <div className="mt-2 space-y-1.5">
                       {account.companyGrants.map(company => {
                         const permissions = account.companyPermissions?.[company];
-                        const forms = permissions && !permissions.includes('requester') ? [] : account.formGrants?.[company] ?? [];
+                        const forms = startableForms(company, account.formGrants ?? {}, account.routeRights, account.companyPermissions);
                         return (
                           <div key={company} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
                             <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1 mb-1">
@@ -496,7 +502,7 @@ function AccountEditor({
   }, []);
 
   // Display-only summary of the draft selection.
-  const totalForms = companyIds.reduce((sum, id) => sum + (formGrants[id]?.length ?? 0), 0);
+  const totalForms = companyIds.reduce((sum, id) => sum + startableForms(id, formGrants, routeRights, account.companyPermissions).length, 0);
   const isRouteAdmin = account.isSuperAdmin || account.role === 'Director' || account.isGroupAdmin || account.isRouteAdmin || companyIds.some(id => routeRights[id]?.companyAdmin || account.companyPermissions?.[id]?.includes('manage-routes'));
   // Says where they can manage signing routes; organization-wide roles cover every company they can access.
   const organizationRouteAdmin = account.isSuperAdmin || account.role === 'Director' || account.isGroupAdmin || account.isRouteAdmin;
@@ -506,20 +512,28 @@ function AccountEditor({
     : 'Can manage signing routes in ' + companyRouteAdmin.join(', ');
   const initials = account.name.trim().split(/\s+/).slice(0, 2).map(part => part.charAt(0)).join('');
 
-  function toggleCompany(id: CompanyId, enabled: boolean) {
+  function toggleCompany(id: CompanyId, access: 'none' | 'view' | 'submit') {
     setError('');
-    setCompanyIds(ids => enabled ? [...ids, id] : ids.filter(value => value !== id));
-    if (!enabled) {
+    setCompanyIds(ids => access === 'none' ? ids.filter(value => value !== id) : ids.includes(id) ? ids : [...ids, id]);
+    if (access === 'none') {
       setFormGrants(grants => {
         const next = { ...grants };
         delete next[id];
         return next;
       });
+    } else {
+      setRouteRights(current => ({ ...current, [id]: { ...current[id], submission: access === 'view' ? false : { excludedForms: [] } } }));
     }
   }
 
   function toggleForm(company: CompanyId, form: string, enabled: boolean) {
     setError('');
+    const submission = routeRights[company]?.submission;
+    if (submission) {
+      const excludedForms = enabled ? submission.excludedForms.filter(value => value !== form) : [...submission.excludedForms, form];
+      setRouteRights(current => ({ ...current, [company]: { ...current[company], submission: { excludedForms } } }));
+      return;
+    }
     setFormGrants(grants => {
       const current = grants[company] ?? [];
       return { ...grants, [company]: enabled ? [...current, form] : current.filter(value => value !== form) };
@@ -647,7 +661,7 @@ function AccountEditor({
               <p className="text-sm text-workspace-muted">{account.isSuperAdmin ? 'Super Admin · organization-wide access' : 'Not a Super Admin · access is set per company below'}</p>
               {editingLegacy && <p className="text-sm text-workspace-muted">This account uses legacy defaults. <button type="button" className="preci-link min-h-10" onClick={() => setUseExplicitGrants(true)}>Use explicit grants</button></p>}
               <fieldset disabled={busy || editingLegacy}>
-                <AccessRightsMatrix grants={companyIds} forms={formGrants} rights={routeRights} permissions={account.companyPermissions} workflows={workflows} legacy={editingLegacy}
+                <AccessRightsMatrix grants={companyIds} forms={formGrants} rights={routeRights} permissions={account.companyPermissions} workflows={workflows}
                   onCompany={toggleCompany} onSubmit={toggleForm} onRights={(id, rights) => setRouteRights(current => ({ ...current, [id]: rights }))} />
               </fieldset>
             </div>
@@ -695,10 +709,11 @@ function AccountEditor({
                 Generate a single-use password recovery link valid for 30 minutes. Share it privately with the employee.
               </p>
               {resetLink && (
-                <label className="preci-field">
-                  Password reset link
+                <div className="preci-field">
+                  <label htmlFor="directory-password-reset-link">Password reset link</label>
                   <div className="flex gap-2">
                     <input
+                      id="directory-password-reset-link"
                       className="workspace-control block min-h-10 flex-1 px-3 font-mono text-xs"
                       readOnly
                       value={resetLink}
@@ -715,7 +730,7 @@ function AccountEditor({
                       Copy
                     </button>
                   </div>
-                </label>
+                </div>
               )}
             </div>
           )}
@@ -738,11 +753,10 @@ function AccountEditor({
           {mode === 'access' && (
             <p className="access-after" role="status">
               <span className="font-semibold text-slate-800">After saving:</span>{' '}
-              {companyIds.length > 1
-                ? `Group View across ${companyIds.join(', ')}`
-                : companyIds.length === 1
-                ? `Single company (${companyIds[0]})`
-                : 'No company access'}
+              {companyIds.length ? companyIds.map(id => {
+                const count = startableForms(id, formGrants, routeRights, account.companyPermissions).length;
+                return `${id}: ${count ? `${count} ${count === 1 ? 'form' : 'forms'} startable` : 'view only for submissions'}`;
+              }).join(' · ') : 'No company access'}
               {' · '}
               {routeAdminScope}
             </p>

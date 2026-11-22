@@ -82,6 +82,15 @@ export class ApiPreciSignRepository implements IAccountAdministrationRepository,
   async requestPasswordReset(email: string) {
     await this.call('/auth/forgot-password', 'POST', { email });
   }
+  async getDisplayProfile() {
+    return await this.call('/me/display-profile') as { department: string; photo: string | null };
+  }
+  async saveDisplayProfile(profile: { department: string; photo: string | null }) {
+    return await this.call('/me/display-profile', 'PUT', profile) as { department: string; photo: string | null };
+  }
+  async requestNameChange(name: string) {
+    await this.call('/me/name-request', 'POST', { name });
+  }
   async requestEmailChange(email: string, currentPassword: string) {
     await this.call('/me/email', 'POST', { email, currentPassword });
   }
