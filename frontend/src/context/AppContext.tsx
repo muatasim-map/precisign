@@ -30,6 +30,7 @@ import type { BootstrapData, SubmitInput, VersionedRequest } from '../services/a
 import { ApiError } from '../services/apiTypes';
 import type { ApiPreciSignRepository } from '../services/apiRepository';
 import { captureFrontendError } from '../services/sentry';
+import { capturePostHog, identifyPostHogUser, resetPostHog } from '../posthog';
 
 interface AppContextType {
   readOnly: boolean;
@@ -326,6 +327,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode; apiData?: { boot
     companyId: 'PEW' as CompanyId,
   };
 
+  const identifiedUserId = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialLoaded || currentUser.id === 'loading-employee' || identifiedUserId.current === currentUser.id) return;
+    if (identifiedUserId.current) resetPostHog();
+    identifyPostHogUser(currentUser);
+    identifiedUserId.current = currentUser.id;
+  }, [currentUser, initialLoaded]);
+
   const selectedCompany: Company = selectedScope === PARENT_ORGANIZATION_ID
     ? {
         id: 'PEW' as CompanyId, // Primary reference for group view
@@ -571,6 +580,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode; apiData?: { boot
         try { localStorage.removeItem(key); } catch {}
       }
       navigation.clearDirty();
+      capturePostHog('request_submitted', {
+        form_type: formType,
+        company_id: validation.companyId,
+        priority: formData.priority ?? 'not_set',
+        attachment_count: attachments.length,
+        has_payment: Boolean(formData.administrativePayment?.payment),
+      });
       return { success: true, newId: record.id };
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
@@ -638,10 +654,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode; apiData?: { boot
       return actionFailure(error);
     } finally { pendingActions.current.delete(requestId); }
   };
-  const approveRequest = (id: string, comment?: string, signatureDataUrl?: string) => runAction(id, () => actionRepository.approve(id, { expectedRevision: revisionOf(id), comment, signatureDataUrl: signatureDataUrl || '' }));
-  const returnRequest = (id: string, reason: string) => runAction(id, () => actionRepository.returnForCorrection(id, { expectedRevision: revisionOf(id), reason }));
-  const rejectRequestAction = (id: string, reason: string) => runAction(id, () => actionRepository.reject(id, { expectedRevision: revisionOf(id), reason }));
-  const resubmitRequest = (id: string, formData: AdminWorkFormData, changeNote?: string, signatureDataUrl?: string, attachments?: AttachmentItem[]) => runAction(id, () => actionRepository.resubmit(id, {
+  const captureSuccessfulAction = async (
+    event: string,
+    id: string,
+    performAction: () => Promise<VersionedRequest>,
+    properties?: Record<string, string | number | boolean>,
+  ) => {
+    const result = await runAction(id, performAction);
+    if (result.success) capturePostHog(event, properties);
+    return result;
+  };
+  const approveRequest = (id: string, comment?: string, signatureDataUrl?: string) => captureSuccessfulAction(
+    'request_approved', id, () => actionRepository.approve(id, { expectedRevision: revisionOf(id), comment, signatureDataUrl: signatureDataUrl || '' }),
+  );
+  const returnRequest = (id: string, reason: string) => captureSuccessfulAction(
+    'request_returned_for_correction', id, () => actionRepository.returnForCorrection(id, { expectedRevision: revisionOf(id), reason }),
+  );
+  const rejectRequestAction = (id: string, reason: string) => captureSuccessfulAction(
+    'request_rejected', id, () => actionRepository.reject(id, { expectedRevision: revisionOf(id), reason }),
+  );
+  const resubmitRequest = (id: string, formData: AdminWorkFormData, changeNote?: string, signatureDataUrl?: string, attachments?: AttachmentItem[]) => captureSuccessfulAction('request_resubmitted', id, () => actionRepository.resubmit(id, {
     expectedRevision: revisionOf(id), formData: {
       dateOfRequest: formData.dateOfRequest, department: formData.department, priority: formData.priority,
       workDescription: formData.workDescription, documents: formData.documents, itRequest: formData.itRequest, rnd: formData.rnd && { ...formData.rnd, fields: Object.fromEntries(Object.entries(formData.rnd.fields).filter(([id]) => !id.startsWith('inpH'))), choices: Object.fromEntries(Object.entries(formData.rnd.choices).filter(([id]) => !id.startsWith('h'))) },
@@ -654,12 +686,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode; apiData?: { boot
     }, changeNote, signatureDataUrl: signatureDataUrl || '', attachments,
   }));
   const readLatestRoute = (id: string) => actionRepository.getRequestById(id);
-  const replaceSigner = (id: string, stageId: string, newUserId: string, reason: string) => runAction(id, () => actionRepository.replaceSigner(id,{ expectedRevision: revisionOf(id), stageId, newUserId, reason }));
-  const acceptReplacement = (id: string, accept: boolean) => runAction(id, () => actionRepository.acceptReplacement(id,{ expectedRevision: revisionOf(id), accept }));
-  const saveRndEvaluation: AppContextType['saveRndEvaluation'] = (id, evaluation) => runAction(id, () => actionRepository.saveRndEvaluation(id, { expectedRevision: revisionOf(id), evaluation }));
-  const cancelRoute = (id: string, reason: string) => runAction(id, () => actionRepository.cancel(id, { expectedRevision: revisionOf(id), reason }));
-  const recordRouteProcessing: AppContextType['recordRouteProcessing'] = (id, action, note, signatureDataUrl, attachment) => runAction(id, () => actionRepository.recordProcessing(id, { expectedRevision: revisionOf(id), action, note, signatureDataUrl, attachment }));
-  const directorOverrideAction = (id: string, reason: string, signatureDataUrl?: string) => runAction(id, () => actionRepository.override(id, { expectedRevision: revisionOf(id), reason, signatureDataUrl: signatureDataUrl || '' }));
+  const replaceSigner = (id: string, stageId: string, newUserId: string, reason: string) => captureSuccessfulAction(
+    'signer_replaced', id, () => actionRepository.replaceSigner(id,{ expectedRevision: revisionOf(id), stageId, newUserId, reason }),
+  );
+  const acceptReplacement = (id: string, accept: boolean) => captureSuccessfulAction(
+    'signer_replacement_responded', id, () => actionRepository.acceptReplacement(id,{ expectedRevision: revisionOf(id), accept }), { accepted_replacement: accept },
+  );
+  const saveRndEvaluation: AppContextType['saveRndEvaluation'] = (id, evaluation) => captureSuccessfulAction(
+    'rnd_evaluation_saved', id, () => actionRepository.saveRndEvaluation(id, { expectedRevision: revisionOf(id), evaluation }),
+  );
+  const cancelRoute = (id: string, reason: string) => captureSuccessfulAction(
+    'request_cancelled', id, () => actionRepository.cancel(id, { expectedRevision: revisionOf(id), reason }),
+  );
+  const recordRouteProcessing: AppContextType['recordRouteProcessing'] = (id, action, note, signatureDataUrl, attachment) => captureSuccessfulAction(
+    'request_processing_recorded', id, () => actionRepository.recordProcessing(id, { expectedRevision: revisionOf(id), action, note, signatureDataUrl, attachment }), { processing_action: action },
+  );
+  const directorOverrideAction = (id: string, reason: string, signatureDataUrl?: string) => captureSuccessfulAction(
+    'request_completed_early', id, () => actionRepository.override(id, { expectedRevision: revisionOf(id), reason, signatureDataUrl: signatureDataUrl || '' }),
+  );
 
   const resetDemoData = async () => {
     if (readOnly) return;

@@ -32,6 +32,7 @@ import {
   type OutboxProcessor,
 } from './email';
 import { allocateSequenceSync, allocateSequenceAsync, formTypeToPrefix } from './email/requestSequence';
+import { emitPostHogLog } from './posthogLogs';
 
 function computeSubmissionHash(
   companyId: string,
@@ -261,6 +262,7 @@ export function requestRoutes(
         throw txError;
       }
       outboxProcessor?.trigger().catch(() => {});
+      emitPostHogLog('request_submitted', { form_type: String(record.formType), attachment_count: files.length });
       res.status(201).json(record);
     } catch (error) { next(error); }
   });

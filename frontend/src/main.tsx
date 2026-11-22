@@ -3,6 +3,7 @@ import App from './App.tsx';
 import './index.css';
 import './workspace-ui.css';
 import './craft.css';
+import './posthog';
 import { initFrontendSentry, SentryErrorBoundary } from './services/sentry';
 
 initFrontendSentry();

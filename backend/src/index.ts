@@ -8,6 +8,7 @@ import { openDatabase } from './db';
 import { migrateAsyncDatabase, openAsyncDatabase } from './asyncDatabase';
 import { createAttachmentStorage } from './attachmentStorage';
 import { createApp } from './app';
+import { initializePostHogLogger } from './posthogLogs';
 import express from 'express';
 import { existsSync } from 'node:fs';
 
@@ -41,10 +42,13 @@ if (trustProxyEnv !== undefined) {
   else if (/^\d+$/.test(trustProxyEnv)) trustProxy = Number(trustProxyEnv);
   else trustProxy = trustProxyEnv;
 }
+const posthogLogs = initializePostHogLogger();
+posthogLogs.emit('api_starting', { database_mode: databaseMode, deployment_environment: production ? 'production' : 'development' });
 const app = await createApp(db, { origin, secureCookies: production, loginLimit, autoStartWorker: true, trustProxy }, createAttachmentStorage());
 const shutdown = (server: any) => () => {
+  posthogLogs.emit('api_stopping');
   (app as any).outboxProcessor?.stop();
-  server.close(() => { db.close(); process.exit(0); });
+  server.close(async () => { db.close(); await posthogLogs.shutdown(); process.exit(0); });
 };
 if (production) {
   if (process.env.VITE_DATA_MODE !== 'api') throw new Error('Production requires VITE_DATA_MODE=api at build and start.');
