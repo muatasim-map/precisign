@@ -5,6 +5,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { UserProfile } from '../../types/index';
 import { X, PenTool, Type, Upload, Check, Shield } from 'lucide-react';
 import { ActionButton, EditorInput, EditorTextarea } from '../create/RequestEditorControls';
+import { SignatureCropEditor } from '../profile/SignatureCropEditor';
 
 export interface EmailPreviewConfig {
   formType: string;
@@ -51,6 +52,9 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
   const savingRef = useRef(false);
   const [drawnDataUrl, setDrawnDataUrl] = useState<string | null>(null);
   const [uploadedDataUrl, setUploadedDataUrl] = useState<string | null>(null);
+  const [uploadSource, setUploadSource] = useState<{ id: number; data: string } | null>(null);
+  const [readingUpload, setReadingUpload] = useState(false);
+  const uploadId = useRef(0);
   const [signatureError, setSignatureError] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -60,9 +64,20 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
     if (isOpen) {
       setStyledName(user.name);
       setSignatureError(null);
-      if (reviewContext) setTab(onSignatureProfile || user.signatureDataUrl ? 'saved' : 'style');
+      setTab(user.signatureDataUrl ? 'saved' : 'upload');
     }
-  }, [isOpen, user, reviewContext?.version, Boolean(onSignatureProfile)]);
+  }, [isOpen, user.id, user.name, user.signatureDataUrl, reviewContext?.version]);
+
+  useEffect(() => {
+    if (isOpen) return;
+    setDrawnDataUrl(null);
+    setUploadedDataUrl(null);
+    setUploadSource(null);
+    setReadingUpload(false);
+    drawingPointer.current = null;
+  }, [isOpen]);
+
+  useEffect(() => () => { uploadId.current++; }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -140,18 +155,36 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
     return offCanvas.toDataURL('image/png');
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
+    const id = ++uploadId.current;
+    setUploadedDataUrl(null);
+    setUploadSource(null);
+    setReadingUpload(false);
+    setSignatureError(null);
     if (file.size > 2 * 1024 * 1024 || !['image/png', 'image/jpeg'].includes(file.type)) {
       setSignatureError('Choose a PNG or JPEG signature up to 2 MiB.');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setUploadedDataUrl(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    setReadingUpload(true);
+    try {
+      const data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+      const image = new Image();
+      image.src = data;
+      await image.decode();
+      if (uploadId.current === id) setUploadSource({ id, data });
+    } catch {
+      if (uploadId.current === id) setSignatureError('Could not open the selected image. Choose another PNG or JPEG.');
+    } finally {
+      if (uploadId.current === id) setReadingUpload(false);
+    }
   };
 
   const handleSaveAndConfirm = async () => {
@@ -211,10 +244,10 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
 
         {reviewContext && <div className="px-4 py-3 sm:px-6 text-xs border-b border-workspace-line"><p className="font-semibold">{user.name} · {reviewContext.responsibility}</p><p className="mt-1 text-workspace-muted">Document version {reviewContext.version}. Your signature is recorded only after the save succeeds.</p></div>}
         {/* Tab selection */}
-        {!onSignatureProfile && <fieldset ref={tabPill.group} disabled={saving} className="seg-group flex border-b border-[#E2E5E9] px-4 sm:px-6 pt-2.5 sm:pt-3 bg-white overflow-x-auto">
+        <fieldset aria-label="Signature method" ref={tabPill.group} disabled={saving} className="seg-group flex border-b border-[#E2E5E9] px-4 sm:px-6 pt-2.5 sm:pt-3 bg-white overflow-x-auto">
           <span aria-hidden="true" ref={tabPill.pill} className="seg-pill seg-pill-underline" />
-          {reviewContext && user.signatureDataUrl && <button type="button" aria-pressed={tab === 'saved'} onClick={() => setTab('saved')} className={`min-h-10 border-b-2 px-3 text-xs font-semibold ${tab === 'saved' ? 'border-transparent text-workspace-teal' : 'border-transparent text-workspace-muted'}`}>Saved signature</button>}
-          <button
+          {user.signatureDataUrl && <button type="button" aria-pressed={tab === 'saved'} onClick={() => setTab('saved')} className={`min-h-10 shrink-0 whitespace-nowrap border-b-2 px-3 text-xs font-semibold ${tab === 'saved' ? 'border-transparent text-workspace-teal' : 'border-transparent text-workspace-muted'}`}>Saved signature</button>}
+          {!reviewContext && <button
             type="button"
             aria-pressed={tab === 'style'}
             onClick={() => setTab('style')}
@@ -226,39 +259,38 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
           >
             <Type className="w-3.5 h-3.5" />
             <span>Type</span>
-          </button>
-          <button
-            type="button"
-            aria-pressed={tab === 'draw'}
-            onClick={() => setTab('draw')}
-            className={`flex items-center gap-2 pb-2.5 px-3 text-xs font-semibold border-b-2 transition-colors ${
-              tab === 'draw'
-                ? 'border-transparent text-[#192B3C]'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <PenTool className="w-3.5 h-3.5" />
-            <span>Draw</span>
-          </button>
+          </button>}
           <button
             type="button"
             aria-pressed={tab === 'upload'}
             onClick={() => setTab('upload')}
-            className={`flex items-center gap-2 pb-2.5 px-3 text-xs font-semibold border-b-2 transition-colors ${
+            className={`flex items-center gap-2 pb-2.5 px-3 text-xs font-semibold border-b-2 transition-colors shrink-0 whitespace-nowrap ${
               tab === 'upload'
                 ? 'border-transparent text-[#192B3C]'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
             <Upload className="w-3.5 h-3.5" />
-            <span>Upload</span>
+            <span>Upload image</span>
           </button>
-        </fieldset>}
+          <button
+            type="button"
+            aria-pressed={tab === 'draw'}
+            onClick={() => setTab('draw')}
+            className={`flex items-center gap-2 pb-2.5 px-3 text-xs font-semibold border-b-2 transition-colors shrink-0 whitespace-nowrap ${
+              tab === 'draw'
+                ? 'border-transparent text-[#192B3C]'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <PenTool className="w-3.5 h-3.5" />
+            <span>Draw signature</span>
+          </button>
+        </fieldset>
 
         {/* Content */}
         <fieldset disabled={saving} className="p-6 space-y-4">
           {signatureError && <p role="alert" className="text-xs text-rose-700">{signatureError}</p>}
-          {onSignatureProfile && !user.signatureDataUrl && <p className="text-sm text-workspace-muted">Save a signature in your profile before signing this request.</p>}
           {emailPreviewConfig && (
             <div className="rounded-lg border border-teal-200 bg-teal-50/30 p-3.5 space-y-3 text-xs">
               <div className="flex items-center justify-between border-b border-teal-200/80 pb-2">
@@ -405,8 +437,7 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
             </div>
           )}
 
-          {tab === 'draw' && (
-            <div className="space-y-2">
+            <div hidden={tab !== 'draw'} className="space-y-2">
               <div className="flex items-center justify-between text-xs text-slate-500">
                 <span>Draw signature on canvas below:</span>
                 <button
@@ -433,11 +464,8 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
                 />
               </div>
             </div>
-          )}
 
-          {tab === 'upload' && (
-            <div className="space-y-3">
-              {user.signatureDataUrl && <button type="button" className="text-xs underline" onClick={() => setUploadedDataUrl(user.signatureDataUrl!)}>Use saved signature</button>}
+            <div hidden={tab !== 'upload'} className="space-y-3">
               <div className="border-2 border-dashed border-[#CBD5E1] rounded-md p-6 text-center hover:bg-[#F9FAFB] transition-colors has-[:focus-visible]:border-teal-700 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-teal-700/20">
                 <input
                   type="file"
@@ -458,13 +486,12 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
                   <span className="text-[10px] text-slate-400 block">Maximum file size 2MB</span>
                 </label>
               </div>
-              {uploadedDataUrl && (
-                <div className="p-2 bg-[#F5F6F8] border rounded-md flex items-center justify-center max-h-[80px]">
-                  <img src={uploadedDataUrl} alt="Uploaded signature" className="max-h-[60px] object-contain" />
-                </div>
-              )}
+              {readingUpload && <p role="status" className="text-sm text-workspace-muted">Opening image…</p>}
+              {uploadSource && <SignatureCropEditor key={uploadSource.id} source={uploadSource.data} onSelect={result => {
+                setUploadedDataUrl(result);
+                if (result) setSignatureError(null);
+              }} />}
             </div>
-          )}
 
           {noteLabel && (
             <label className="block space-y-1 text-xs">
@@ -499,19 +526,20 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({
           >
             Cancel
           </ActionButton>
-          {onSignatureProfile && <ActionButton variant={user.signatureDataUrl ? 'quiet' : 'primary'} size="sm" disabled={saving} onClick={onSignatureProfile}>
+          {onSignatureProfile && <ActionButton variant="quiet" size="sm" disabled={saving} onClick={onSignatureProfile}>
             {user.signatureDataUrl ? 'Update in profile' : 'Set up signature'}
           </ActionButton>}
-          {(!onSignatureProfile || user.signatureDataUrl) && <MorphButton
+          <MorphButton
             variant="primary"
             size="sm"
             icon={Check}
             state={saving ? 'busy' : 'idle'}
+            disabled={tab === 'upload' && !uploadedDataUrl}
             busyLabel={/submit/i.test(confirmLabel) ? 'Submitting…' : 'Signing…'}
             onClick={handleSaveAndConfirm}
           >
             {confirmLabel}
-          </MorphButton>}
+          </MorphButton>
         </div>
       </div>
     </WorkspaceDialog>
