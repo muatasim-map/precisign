@@ -39,6 +39,7 @@ import { AuthCard } from './components/layout/AuthCard';
 import { passwordProblem } from '../../shared/utils/passwordPolicy';
 import { RequestSkeleton } from './components/common/Skeletons';
 import { CommandPalette } from './components/common/CommandPalette';
+import { resetPostHog } from './posthog';
 
 const formSlugMap: Record<string, string> = {
   'administrative-payment': 'Administrative & Payment Request',
@@ -274,6 +275,7 @@ const ApiApp: React.FC = () => {
   const [forgot, setForgot] = React.useState(false);
   const repository = React.useMemo(() => new ApiPreciSignRepository(), []);
   const session = React.useMemo(() => new ApiSession(repository, setState), [repository]);
+  const hadAuthenticatedSession = React.useRef(false);
   React.useEffect(() => {
     const onHashChange = () => {
       const token = new URLSearchParams(window.location.hash.slice(1)).get('reset');
@@ -283,6 +285,14 @@ const ApiApp: React.FC = () => {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
   React.useEffect(() => { void session.restore(); }, [session]);
+  React.useEffect(() => {
+    if (state.status === 'authenticated') {
+      hadAuthenticatedSession.current = true;
+    } else if (state.status !== 'loading' && hadAuthenticatedSession.current) {
+      resetPostHog();
+      hadAuthenticatedSession.current = false;
+    }
+  }, [state.status]);
   React.useEffect(() => {
     if (state.status !== 'authenticated') return;
     let active = true;

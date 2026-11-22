@@ -18,3 +18,4 @@ backups/
 
 .vercel/
 
+.env
