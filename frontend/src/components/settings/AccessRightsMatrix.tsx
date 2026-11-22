@@ -115,7 +115,6 @@ export function AccessRightsMatrix({ grants, forms, rights, permissions, workflo
               const signerIds = grant.signerSteps?.[form];
               const taskIds = grant.processorTasks?.[form] ?? [];
               const maySign = permissions?.[id]?.includes('approver') ?? true;
-              const maySubmit = maySubmitIn(id);
               const setSignerIds = (values?: string[]) => {
                 const signerSteps = { ...grant.signerSteps };
                 if (values) signerSteps[form] = values;
@@ -125,8 +124,8 @@ export function AccessRightsMatrix({ grants, forms, rights, permissions, workflo
               return <td key={id} className={'space-y-2 p-2 align-top md:p-3 ' + columnClass(id)}>
                 {grants.includes(id) ? <>
                   <label className="flex min-h-10 items-center gap-2">
-                    <input type="checkbox" disabled={!maySubmit} checked={canStart(id, form)} onChange={event => onSubmit(id, form, event.target.checked)} />
-                    {maySubmit ? 'Can start this form' : 'Select Can submit to allow starting forms'}
+                    <input type="checkbox" checked={canStart(id, form)} onChange={event => onSubmit(id, form, event.target.checked)} />
+                    Can start this form
                   </label>
                   <details className="handoff-disclosure rounded-md bg-slate-50 p-2">
                     <summary className="leading-5"><span>Can be chosen as signer<span className="block text-workspace-muted">{!maySign ? 'Restricted by company role' : signerIds === undefined ? 'Follows company rules' : signerIds.length ? ('Limited to ' + signerIds.length + (signerIds.length === 1 ? ' step' : ' steps')) : 'Not offered'}</span></span></summary>

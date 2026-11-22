@@ -528,16 +528,12 @@ function AccountEditor({
 
   function toggleForm(company: CompanyId, form: string, enabled: boolean) {
     setError('');
-    const submission = routeRights[company]?.submission;
-    if (submission) {
-      const excludedForms = enabled ? submission.excludedForms.filter(value => value !== form) : [...submission.excludedForms, form];
-      setRouteRights(current => ({ ...current, [company]: { ...current[company], submission: { excludedForms } } }));
-      return;
-    }
-    setFormGrants(grants => {
-      const current = grants[company] ?? [];
-      return { ...grants, [company]: enabled ? [...current, form] : current.filter(value => value !== form) };
-    });
+    const starts = startableForms(company, formGrants, routeRights, account.companyPermissions);
+    const excludedForms = SUBMITTABLE_FORMS.filter(value => value === form ? !enabled : !starts.includes(value));
+    setRouteRights(current => ({
+      ...current,
+      [company]: { ...current[company], submission: excludedForms.length === SUBMITTABLE_FORMS.length ? false : { excludedForms } },
+    }));
   }
 
   async function save() {
