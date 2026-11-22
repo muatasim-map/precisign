@@ -400,49 +400,64 @@ export function renderEmailContent(eventType: EmailEventType, payload: EmailPayl
   // 3. PreciRoute Trail (Audit & Remarks Timeline)
   let precirouteTrailHtml = '';
   if (payload.precirouteTrail && payload.precirouteTrail.length > 0) {
-    const itemsHtml = payload.precirouteTrail.map((item, idx) => {
-      const isLast = idx === payload.precirouteTrail!.length - 1;
-      const initial = escapeHtml(item.initial || item.name[0] || 'U');
-      const actionColor = item.action === 'Signed' || item.action === 'Approved' ? '#15803d' : '#64748B';
-      const speechBorderColor = item.roleTag.toLowerCase().includes('requester') ? '#0D9488' : '#6366F1';
+    const steps = payload.precirouteTrail.map(({ name, roleTag, action, timestamp, comment }) => ({
+      name, roleTag, action, timestamp, comment,
+    }));
+    if (eventType === 'ROUTE_COMPLETED' && !steps.some(({ action }) => action === 'Route Completed' || action === 'Completed')) {
+      steps.push({ name: '', roleTag: '', action: 'Route Completed', timestamp: payload.completionSummary?.completedDate, comment: undefined });
+    }
 
-      return `
-        <div style="margin-bottom: ${isLast ? '0' : '14px'};">
-          <table cellpadding="0" cellspacing="0" border="0" width="100%">
-            <tr>
-              <td style="width: 36px; vertical-align: top;">
-                <div style="width: 32px; height: 32px; border-radius: 50%; background-color: ${escapeHtml(item.avatarBg || '#CCFBF1')}; color: ${escapeHtml(item.avatarColor || '#0F766E')}; text-align: center; line-height: 32px; font-weight: 700; font-size: 13px;">
-                  ${initial}
-                </div>
-              </td>
-              <td style="padding-left: 10px; vertical-align: top;">
-                <div style="font-size: 13px; margin-bottom: 4px;">
-                  <strong style="color: #0F172A;">${escapeHtml(item.name)} (${escapeHtml(item.roleTag)})</strong>
-                  <span style="color: ${actionColor}; font-size: 12px; font-weight: 600;">&nbsp;&middot;&nbsp;${escapeHtml(item.action)}</span>
-                  ${item.timestamp ? `<span style="color: #94A3B8; font-size: 11px; margin-left: 6px;">${escapeHtml(item.timestamp)}</span>` : ''}
-                </div>
-                ${item.comment ? `
-                  <div style="background: #F8FAFC; border-left: 3px solid ${speechBorderColor}; padding: 8px 12px; border-radius: 0 6px 6px 0; font-size: 13px; color: #334155; line-height: 1.45;">
-                    ${escapeHtml(item.comment)}
-                  </div>
-                ` : ''}
-              </td>
-            </tr>
-          </table>
-          ${isLast ? '' : '<div style="height: 1px; background: #F1F5F9; margin: 12px 0 12px 42px;"></div>'}
-        </div>
-      `;
-    }).join('');
+    let rowsHtml = '';
+    for (let start = 0; start < steps.length; start += 3) {
+      const row = steps.slice(start, start + 3);
+      const itemsHtml = row.map((step, idx) => {
+        const completed = step.action === 'Route Completed' || step.action === 'Completed';
+        const signed = step.action === 'Signed' || step.action === 'Approved';
+        const submitted = step.action === 'Submitted';
+        const bypassed = step.action === 'Bypassed';
+        const accent = signed || completed ? '#11634F' : bypassed ? '#854D0E' : '#0A1E35';
+        const markerBg = signed || completed ? '#E3F3ED' : bypassed ? '#FEF3C7' : '#EDF2F7';
+        const symbol = completed ? '&#10003;' : signed ? '&#9998;' : submitted ? '&#8599;' : bypassed ? '&#8212;' : '&#8226;';
+        const nameColor = /^signer\b/i.test(step.roleTag) ? '#4338A0' : '#0A1E35';
+        const connector = '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="2" bgcolor="#CBD5E1" style="height: 2px; font-size: 1px; line-height: 2px; mso-line-height-rule: exactly;">&nbsp;</td></tr></table>';
+
+        return `
+          <td width="${Math.round(100 / row.length)}%" valign="top" align="center" style="font-size: 13px; line-height: 1.45; overflow-wrap: anywhere;">
+            <table role="presentation" aria-hidden="true" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; table-layout: fixed;">
+              <tr>
+                <td valign="middle">${idx > 0 ? connector : ''}</td>
+                <td width="28" height="28" align="center" valign="middle" bgcolor="${markerBg}" style="height: 28px; width: 28px; border-radius: 50%;">
+                  <p style="margin: 0; line-height: 28px; mso-line-height-rule: exactly; color: ${accent}; font-family: 'Segoe UI Symbol', Arial, sans-serif; font-weight: 700; font-size: 16px;">${symbol}</p>
+                </td>
+                <td valign="middle">${idx < row.length - 1 ? connector : ''}</td>
+              </tr>
+            </table>
+            <div style="padding: 6px 4px 0;">
+              <strong style="color: ${accent}; font-size: 13px;">${escapeHtml(step.action)}</strong>
+              ${step.name ? `<div style="color: ${nameColor}; font-weight: 700;">${escapeHtml(step.name)}</div>` : ''}
+              ${step.roleTag ? `<div style="color: #475569; font-size: 12px;">${escapeHtml(step.roleTag)}</div>` : ''}
+              ${step.timestamp ? `<div style="color: #475569; font-size: 12px;">${escapeHtml(step.timestamp)}</div>` : ''}
+              ${step.comment ? `<p style="margin: 5px 0 0; text-align: left; padding-left: 5px; border-left: 2px solid #CBD5E1;">${escapeHtml(step.comment).replace(/\r\n|\r|\n/g, '<br>')}</p>` : ''}
+            </div>
+          </td>
+        `;
+      }).join('');
+      rowsHtml += `
+        <tr><td style="padding-top: ${start ? '14' : '0'}px;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width: 100%; table-layout: fixed;"><tr>${itemsHtml}</tr></table>
+        </td></tr>`;
+    }
 
     precirouteTrailHtml = `
-      <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px 18px; margin-bottom: 22px;">
-        <div style="font-size: 13px; font-weight: 700; color: #0F172A; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.5px;">
-          PreciRoute Trail
-        </div>
-        <div>
-          ${itemsHtml}
-        </div>
-      </div>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width: 100%;">
+        <tr><td bgcolor="#FFFFFF" style="background-color: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px 18px;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+            <tr><td style="padding-bottom: 14px; font-size: 13px; font-weight: 700; color: #0F172A; text-transform: uppercase; letter-spacing: 0.5px;">PreciRoute Trail</td></tr>
+            ${rowsHtml}
+          </table>
+        </td></tr>
+        <tr><td height="22" style="height: 22px; font-size: 1px; line-height: 22px; mso-line-height-rule: exactly;">&nbsp;</td></tr>
+      </table>
     `;
   } else if (payload.emailNote && payload.emailNote.trim()) {
     precirouteTrailHtml = `

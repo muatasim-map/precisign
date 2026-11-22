@@ -275,6 +275,9 @@ test('Email Outbox & Notification Lifecycle Suite', async (t) => {
     assert.ok(!text.includes('Urgent emergency override required'));
     assert.ok(html.includes('Bypassed'));
     assert.ok(html.includes('Signed'));
+    const trail = html.slice(html.indexOf('PreciRoute Trail'));
+    assert.equal((trail.match(/>Route Completed<\/strong>/g) || []).length, 1);
+    assert.ok(trail.indexOf('>Submitted</strong>') < trail.indexOf('>Route Completed</strong>'));
   });
 
   await t.test('6. Inactive backup received no emails before formal replacement', async () => {
