@@ -230,7 +230,7 @@ export async function createApp(db: DatabaseSync | AsyncDatabase, config: Server
       res.status(204).end();
     } catch (error) { next(error); }
   });
-  app.use('/api', profileRoutes(db, now));
+  app.use('/api', profileRoutes(db));
   app.use('/api', accountAdminRoutes(db, origin, now, transport));
   app.use('/api', accessRoleRoutes(db));
   app.use('/api', workflowRoutes(db));

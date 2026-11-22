@@ -25,32 +25,10 @@ export function ownSignature(db: DatabaseSync, userId: string) {
   return row ? { signatureDataUrl: String(row.signature_data_url), signatureStyleText: String(row.signature_style_text) } : {};
 }
 
-export function profileRoutes(db: DatabaseSync | AsyncDatabase, now = Date.now) {
+export function profileRoutes(db: DatabaseSync | AsyncDatabase) {
   const router = Router();
-  router.patch('/me/name', async (req, res, next) => {
-    try {
-      fields(req.body, ['name']);
-      const name = text(req.body.name, 150).trim();
-      const update = 'UPDATE users SET name=? WHERE id=?';
-      const audit = 'INSERT INTO account_name_changes (user_id,old_name,new_name,changed_at) VALUES (?,?,?,?)';
-      const changedAt = new Date(now()).toISOString();
-      if ('prepare' in db) {
-        transaction(db, () => {
-          const actor = res.locals.requireCurrentUser();
-          if (actor.name === name) return;
-          db.prepare(update).run(name, actor.id);
-          db.prepare(audit).run(actor.id, actor.name, name, changedAt);
-        });
-      } else {
-        await db.transaction(async tx => {
-          const actor = await res.locals.requireCurrentUserAsync(tx);
-          if (actor.name === name) return;
-          await tx.execute(update, [name, actor.id]);
-          await tx.execute(audit, [actor.id, actor.name, name, changedAt]);
-        });
-      }
-      res.json({ name, initials: name.split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase() });
-    } catch (error) { next(error); }
+  router.patch('/me/name', (_req, res) => {
+    res.status(403).json({ error: 'Saved names are managed by super admins in User directory.' });
   });
   router.patch('/me/signature', async (req, res, next) => {
     try {

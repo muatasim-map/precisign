@@ -28,7 +28,6 @@ export interface IPreciSignRepository {
   // Users & Demo Personas
   getUsers(): Promise<UserProfile[]>;
   getUserById(id: string): Promise<UserProfile | null>;
-  updateUserName(userId: string, name: string): Promise<Pick<UserProfile, 'name' | 'initials'>>;
   updateUserSignature(
     userId: string,
     signatureDataUrl?: string,
@@ -168,18 +167,6 @@ export class LocalStoragePreciSignRepository implements IPreciSignRepository {
   async getUserById(id: string): Promise<UserProfile | null> {
     const users = await this.getUsers();
     return users.find((u) => u.id === id) || null;
-  }
-
-  async updateUserName(userId: string, name: string): Promise<Pick<UserProfile, 'name' | 'initials'>> {
-    if (!name.trim() || name.length > 150) throw new Error('Enter a name of up to 150 characters.');
-    const users = this.getItem<UserProfile[]>(this.keys.USERS, this.dataset.users);
-    if (!users.some(user => user.id === userId)) throw new Error('Employee not found.');
-    const profile = {
-      name: name.trim(),
-      initials: name.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase(),
-    };
-    this.setItem(this.keys.USERS, users.map(user => user.id === userId ? { ...user, ...profile } : user));
-    return profile;
   }
 
   async updateUserSignature(

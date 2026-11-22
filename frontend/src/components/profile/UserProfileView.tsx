@@ -9,47 +9,6 @@ import { ActionButton, EditorInput, EditorSelect, FormField } from '../create/Re
 import { SignatureCropEditor } from './SignatureCropEditor';
 import { WorkspaceDialog } from '../common/WorkspaceDialog';
 
-function NameForm({ name, save }: { name: string; save: (name: string) => Promise<void> }) {
-  const [draft, setDraft] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState(false);
-
-  return (
-    <form aria-label="Change your name" className="space-y-2 border-t border-workspace-line pt-4" onSubmit={async event => {
-      event.preventDefault();
-      if (saving) return;
-      const next = (draft ?? name).trim();
-      if (!next) {
-        setError(true);
-        setMessage('Enter your name.');
-        return;
-      }
-      if (next === name) return;
-      setSaving(true);
-      setError(false);
-      setMessage('');
-      try {
-        await save(next);
-        setDraft(null);
-        setMessage('Name saved.');
-      } catch (cause) {
-        setError(true);
-        setMessage(cause instanceof Error ? cause.message : 'Could not save your name.');
-      } finally {
-        setSaving(false);
-      }
-    }}>
-      <FormField id="profile-name" label="Full name">
-        <EditorInput id="profile-name" name="name" autoComplete="name" required maxLength={150}
-          value={draft ?? name} disabled={saving} onChange={event => { setDraft(event.target.value); setMessage(''); }} />
-      </FormField>
-      <ActionButton type="submit" size="sm" disabled={saving}>{saving ? 'Saving…' : 'Save name'}</ActionButton>
-      {message && <p className={error ? 'text-sm text-rose-700' : 'text-sm text-workspace-muted'} role={error ? 'alert' : 'status'}>{message}</p>}
-    </form>
-  );
-}
-
 export function EmailChangeForm({ request }: { request: (email: string, password: string) => Promise<void> }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -87,7 +46,7 @@ export function EmailChangeForm({ request }: { request: (email: string, password
 }
 
 export const UserProfileView: React.FC = () => {
-  const { currentUser, requestEmailChange, updateUserName, updateUserSignature, users, setCurrentUserId, readOnly: connected, signatureReturn, openReviewRequest } = useApp();
+  const { currentUser, requestEmailChange, updateUserSignature, users, setCurrentUserId, readOnly: connected, signatureReturn, openReviewRequest } = useApp();
 
   const [activeTab, setActiveTab] = useState<'draw' | 'upload'>('upload');
   const [source, setSource] = useState<string | null>(null);
@@ -231,7 +190,6 @@ export const UserProfileView: React.FC = () => {
             </div>
           </div>
 
-          {!isLoadingEmployee && <NameForm key={currentUser.id} name={currentUser.name} save={updateUserName} />}
 
           <dl className="space-y-3 border-t border-workspace-line pt-4 text-sm">
             <div>

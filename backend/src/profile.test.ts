@@ -116,10 +116,10 @@ test('signature profile is owner-only, private, validated and independent of req
   checksBeforeExpiry = Infinity;
   db.prepare('INSERT INTO account_access (user_id, is_super_admin) VALUES (?, 1)').run(ids[1]);
   assert.equal((await call('/me/name',3,{name:'New Name'})).status,401);
-  assert.equal((await call('/me/name',0,{name:'New Name',userId:ids[1]})).status,400);
-  assert.equal((await call('/me/name',0,{name:'   '})).status,400);
-  assert.deepEqual(await (await call('/me/name',0,{name:'  New Name  '})).json(), {name:'New Name',initials:'NN'});
-  assert.equal((await call('/me/name',0,{name:'New Name'})).status,200);
+  assert.equal((await call('/me/name',0,{name:'New Name'})).status,403);
+  assert.equal((await call('/me/name',1,{name:'New Name'})).status,403);
+  assert.equal((await call('/admin/accounts/'+ids[0],0,{name:'New Name'})).status,403);
+  assert.equal((await call('/admin/accounts/'+ids[0],1,{name:'  New Name  '})).status,204);
   const self = (await (await call('/auth/me')).json()).user;
   assert.equal(self.name,'New Name');
   assert.equal(self.signatureDataUrl,signatureDataUrl);
@@ -127,9 +127,10 @@ test('signature profile is owner-only, private, validated and independent of req
   assert.equal((await call('/admin/accounts')).status,403);
   const accounts = await (await call('/admin/accounts',1)).json();
   assert.equal(accounts.find((account: any) => account.id === ids[0]).name,'New Name');
-  assert.deepEqual(accounts.find((account: any) => account.id === ids[0]).nameHistory, [
-    {id:1,oldName:'Signer 0',newName:'New Name',changedAt:new Date(issuedAt).toISOString()},
+  assert.deepEqual(accounts.find((account: any) => account.id === ids[0]).identityHistory, [
+    {id:1,actorId:ids[1],field:'name',oldValue:'Signer 0',newValue:'New Name',changedAt:new Date(issuedAt).toISOString()},
   ]);
+  assert.equal((await call('/admin/accounts/'+ids[1],1,{name:'Renamed Admin'})).status,204);
   assert.equal(JSON.parse(String(db.prepare("SELECT record FROM requests WHERE id='snapshot'").get()!.record)).signatureDataUrl,'original mark');
  }finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));db.close();}
 });

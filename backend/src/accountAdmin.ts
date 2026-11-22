@@ -88,7 +88,7 @@ export function accountAdminRoutes(db: DatabaseSync | AsyncDatabase, origin: str
         if (!actor.isSuperAdmin) throw new RequestError(403, 'Administrator required.');
         const target = db.prepare('SELECT id,name,email,is_super_admin,is_disabled,COALESCE(role_override,role) AS effective_role FROM account_profiles WHERE id=?').get(req.params.id);
         if (!target) throw new RequestError(404, 'Account not found.');
-        if (target.is_disabled === null) throw new RequestError(409, 'Legacy account access requires migration.');
+        if (target.is_disabled === null && (email !== undefined || isDisabled !== undefined || role !== undefined || notificationEmail !== undefined)) throw new RequestError(409, 'Legacy account access requires migration.');
         if (role !== undefined && role !== target.effective_role) {
           if (['Director', 'General Manager'].includes(String(target.effective_role))) throw new RequestError(403, 'Leadership roles cannot be changed here.');
           db.prepare('UPDATE users SET role=? WHERE id=?').run(role === 'Employee' ? 'Admin' : role, target.id!);
@@ -129,7 +129,7 @@ export function accountAdminRoutes(db: DatabaseSync | AsyncDatabase, origin: str
         if (!actor.isSuperAdmin) throw new RequestError(403, 'Administrator required.');
         const target = (await tx.execute('SELECT id,name,email,is_super_admin,is_disabled,COALESCE(role_override,role) AS effective_role FROM account_profiles WHERE id=?', [req.params.id])).rows[0];
         if (!target) throw new RequestError(404, 'Account not found.');
-        if (target.is_disabled === null) throw new RequestError(409, 'Legacy account access requires migration.');
+        if (target.is_disabled === null && (email !== undefined || isDisabled !== undefined || role !== undefined || notificationEmail !== undefined)) throw new RequestError(409, 'Legacy account access requires migration.');
         const id = String(target.id);
         if (role !== undefined && role !== target.effective_role) {
           if (['Director', 'General Manager'].includes(String(target.effective_role))) throw new RequestError(403, 'Leadership roles cannot be changed here.');

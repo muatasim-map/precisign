@@ -369,7 +369,7 @@ export function AccountDirectoryView({ repository }: { repository: IAccountAdmin
                         <Mail aria-hidden="true" className="size-4" /> Change email
                       </button>
                       {!isShowcaseBuild && <button type="button" className="preci-menu-action w-full text-left"
-                        disabled={account.companyGrants === null} onClick={event => openEditor(account, 'name', event.currentTarget)}>
+                        onClick={event => openEditor(account, 'name', event.currentTarget)}>
                         <UsersRound aria-hidden="true" className="size-4" /> Change name
                       </button>}
                       {account.companyGrants !== null && !account.isDisabled && !['Director', 'General Manager'].includes(account.role) && (

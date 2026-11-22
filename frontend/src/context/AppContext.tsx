@@ -43,7 +43,6 @@ interface AppContextType {
   currentUser: UserProfile;
   setCurrentUserId: (id: string) => void;
   requestEmailChange?: (email: string, currentPassword: string) => Promise<void>;
-  updateUserName: (name: string) => Promise<void>;
   updateUserSignature: (userId: string, signatureDataUrl?: string, signatureStyleText?: string) => Promise<void>;
   requests: RequestRecord[];
   refreshRequests: () => Promise<void>;
@@ -305,11 +304,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode; apiData?: { boot
     void dataService.saveDemoSession(selectedScope, id).catch(console.error);
     setActiveView('dashboard');
   });
-
-  const updateUserName = async (name: string) => {
-    const updated = await (apiRepository || dataService).updateUserName(currentUserId, name);
-    setUsers(prev => prev.map(user => user.id === currentUserId ? { ...user, ...updated } : user));
-  };
 
   const updateUserSignature = async (
     userId: string,
@@ -705,7 +699,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode; apiData?: { boot
         currentUser,
         setCurrentUserId,
         requestEmailChange: apiRepository ? (email, currentPassword) => apiRepository.requestEmailChange(email, currentPassword) : undefined,
-        updateUserName,
         updateUserSignature,
         requests,
         refreshRequests,
